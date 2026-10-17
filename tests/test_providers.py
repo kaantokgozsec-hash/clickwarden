@@ -668,6 +668,13 @@ class MyDataTests(IsolatedConfig):
         self.assertTrue((target / "keep.txt").exists())
         self.assertFalse(link.exists())
 
+    def test_unreadable_path_is_reported_not_called_nothing_stored(self):
+        with patch.object(mydata.os, "lstat", side_effect=PermissionError(13, "Access is denied")):
+            row = mydata.inventory(self.home)[0]
+        self.assertFalse(row["exists"])
+        self.assertIn("PermissionError", row["error"])
+        self.assertIn("cannot be read", mydata.status_text(row))
+
     def test_cli_where_never_prints_the_key(self):
         (providers.config_dir() / "key.dpapi").write_text("sk-secret-value")
         text = json.dumps(mydata.inventory(self.home))

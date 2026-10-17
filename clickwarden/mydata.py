@@ -72,14 +72,25 @@ def _measure(path: Path) -> tuple[int, int]:
     return files, size
 
 
+def _probe(path: Path) -> tuple[bool, str]:
+    """(exists, error). A permission problem is reported, not mistaken for "nothing stored"."""
+    try:
+        os.lstat(path)
+        return True, ""
+    except FileNotFoundError:
+        return False, ""
+    except OSError as error:
+        return False, f"{type(error).__name__}: {error.strerror or error}"
+
+
 def inventory(home: Path | None = None) -> list[dict]:
     rows = []
     for name, (label, note, sensitive) in ITEMS.items():
         path = locate(name, home)
-        exists = path.exists() or _is_link(path)
+        exists, error = _probe(path)
         files, size = _measure(path) if exists else (0, 0)
         rows.append({"name": name, "label": label, "note": note, "sensitive": sensitive, "path": str(path),
-                     "exists": exists, "files": files, "bytes": size})
+                     "exists": exists, "files": files, "bytes": size, "error": error})
     return rows
 
 
@@ -93,6 +104,8 @@ def human_size(size: int) -> str:
 
 def status_text(row: dict) -> str:
     """Short state without the label, e.g. "3 file(s), 12.0 KB"."""
+    if row.get("error"):
+        return "cannot be read (" + row["error"][:80] + ")"
     if not row["exists"]:
         return "nothing stored"
     if row["name"] in ("key", "settings", "shortcut"):

@@ -457,8 +457,10 @@ def launch():  # pragma: no cover - interactive window
 
     def open_folder():
         folder = providers.config_dir()
-        if folder.exists():
+        if folder.is_dir():
             os.startfile(folder)
+        else:
+            status.set(f"The settings folder does not exist (or cannot be read) from this window: {folder}")
 
     ttk.Button(footer, text="Open settings folder", command=open_folder).pack(side="left", padx=4)
     ttk.Button(footer, text="Refresh", command=refresh_data).pack(side="left", padx=4)
