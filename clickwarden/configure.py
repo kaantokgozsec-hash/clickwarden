@@ -79,20 +79,27 @@ def form_to_settings(values: dict) -> tuple[Settings, list[str]]:
     return settings, errors
 
 
-def host_matches(typed: str, settings: Settings) -> bool:
-    """The user accepts a cloud destination by typing its host name (a tick box is too easy to click through)."""
-    return bool(settings.host) and (typed or "").strip().lower().rstrip("/") == settings.host
+def consent_question(settings: Settings) -> str:
+    """Plain-language text of the confirmation dialog shown before any cloud provider is saved or tested."""
+    info = providers.disclosure(settings)
+    lines = [f"Allow Clickwarden to send screenshots of your screen to {settings.host}?", "",
+             info["summary"][0].upper() + info["summary"][1:] + ".", "", "What is sent:"]
+    lines += [f"  - {item}" for item in info["sends"]]
+    lines += ["", "What can go wrong:"] + [f"  - {item}" for item in providers.RISKS[:3]]
+    lines += ["", "Choose No to keep everything on this computer. You can withdraw this any time with "
+                  "Revoke consent. It only applies to this provider."]
+    return "\n".join(lines)
 
 
 def save_form(values: dict, accepted: bool) -> list[str]:
-    """Persist validated settings. Remote destinations need `accepted` (the host name typed to confirm)."""
+    """Persist validated settings. Remote destinations need `accepted` (the user said Yes to the dialog)."""
     settings, errors = form_to_settings(values)
     config = providers.load_config()
     if not errors and not settings.local:
         previously = providers.consent_given(settings, config)
         if not accepted and not previously:
-            errors.append(f"Type {settings.host} in the acceptance box to confirm your screen contents will be "
-                          "sent there, or choose a local provider.")
+            errors.append(f"You need to accept that your screen contents are sent to {settings.host} "
+                          "(you are asked when you press Save), or choose a local provider.")
     if errors:
         return errors
     config.update(preset=settings.preset, base_url=settings.base_url, model=settings.model,
@@ -146,8 +153,18 @@ def launch():  # pragma: no cover - interactive window
            "include_usage": tk.BooleanVar(value=bool(config.get("include_usage", True))),
            "price_in": tk.StringVar(value=str(config.get("price_in", ""))),
            "price_out": tk.StringVar(value=str(config.get("price_out", "")))}
-    typed = tk.StringVar()
     status = tk.StringVar()
+    accepted_hosts = set()  # hosts the user said Yes for in this window; recorded when they press Save
+
+    def confirm(settings):
+        """Ask once per provider; the default button is No."""
+        if settings.local or settings.host in accepted_hosts or providers.consent_given(settings, config):
+            return True
+        if messagebox.askyesno("Send your screen to " + settings.host + "?", consent_question(settings),
+                               icon="warning", default="no"):
+            accepted_hosts.add(settings.host)
+            return True
+        return False
 
     def limited(parent, max_len, **options):
         """ttk.Entry that refuses oversized or multi-line input before it ever reaches the widget."""
@@ -193,12 +210,8 @@ def launch():  # pragma: no cover - interactive window
     notice = tk.Text(frame, height=11, wrap="word", background="#f6f6f6")
     notice.grid(row=13, column=0, columnspan=2, sticky="nsew", pady=(10, 4))
     frame.rowconfigure(13, weight=1)
-    consent_frame = ttk.Frame(frame)
-    consent_frame.grid(row=14, column=0, columnspan=2, sticky="ew")
-    consent_label = ttk.Label(consent_frame, text="", wraplength=600, justify="left")
-    consent_label.pack(anchor="w")
-    consent_entry = limited(consent_frame, 253, textvariable=typed)
-    consent_entry.pack(anchor="w", fill="x", pady=(2, 0))
+    consent_label = ttk.Label(frame, text="", wraplength=620, justify="left")
+    consent_label.grid(row=14, column=0, columnspan=2, sticky="w")
     ttk.Label(frame, textvariable=status, wraplength=600, foreground="#a00").grid(row=15, column=0, columnspan=2, sticky="w")
 
     def current_values():
@@ -218,17 +231,13 @@ def launch():  # pragma: no cover - interactive window
         key_note.config(text=("A key is already stored; leave blank to keep it. " if stored else "") +
                         "Paste only the key itself, never a code sample.")
         if settings.local:
-            consent_entry.state(["disabled"])
             consent_label.config(text="Local server: nothing leaves this computer, no acceptance needed.")
+        elif providers.consent_given(settings, config):
+            consent_label.config(text=f"You already accepted sending screens to {settings.host}. "
+                                      "Use Revoke consent to withdraw it.")
         else:
-            consent_entry.state(["!disabled"])
-            if providers.consent_given(settings, config):
-                consent_label.config(text=f"You already accepted sending screens to {settings.host}. "
-                                          "Use Revoke consent to withdraw it.")
-            else:
-                consent_label.config(text=f"To accept, type the host name {settings.host or '(set an endpoint first)'} "
-                                          "below. This confirms you read the notice and that your screen contents "
-                                          "will be sent there.")
+            consent_label.config(text=f"Press Save and you will be asked to confirm that screenshots are sent to "
+                                      f"{settings.host or '(set an endpoint first)'}.")
 
     def choose_preset(*_):
         preset = PRESETS.get(by_label.get(var["preset"].get(), "custom"), PRESETS["custom"])
@@ -236,12 +245,15 @@ def launch():  # pragma: no cover - interactive window
         var["model"].set(preset["model"])
         var["coord_space"].set(preset["coord_space"])
         note.config(text=preset["note"])
-        typed.set("")
         refresh()
 
     def save():
-        settings, _problems = form_to_settings(current_values())
-        errors = save_form(current_values(), host_matches(typed.get(), settings))
+        settings, problems = form_to_settings(current_values())
+        if not problems and not confirm(settings):
+            status.set(f"Not saved: you chose not to send your screen to {settings.host}. "
+                       "Pick a local provider to keep everything on this computer.")
+            return
+        errors = save_form(current_values(), settings.local is False and settings.host in accepted_hosts)
         if errors:
             status.set("\n".join(errors))
             return
@@ -255,8 +267,8 @@ def launch():  # pragma: no cover - interactive window
         if errors:
             status.set("\n".join(errors))
             return
-        if not settings.local and not (host_matches(typed.get(), settings) or providers.consent_given(settings, config)):
-            status.set(f"Accept the data-sharing notice first: type {settings.host} in the acceptance box.")
+        if not confirm(settings):
+            status.set(f"Test cancelled: nothing was sent to {settings.host}.")
             return
         if not messagebox.askokcancel("Test connection", f"This sends one blank 64x64 image and the word OK to "
                                       f"{settings.host}. It may use a tiny amount of paid quota. Continue?"):
@@ -285,7 +297,7 @@ def launch():  # pragma: no cover - interactive window
     def revoke():
         had = providers.revoke_consent()
         config.pop("consent", None)
-        typed.set("")
+        accepted_hosts.clear()
         status.set("Consent revoked. Clickwarden will not send screens to a cloud provider until you accept again."
                    if had else "No saved consent to revoke.")
         refresh()

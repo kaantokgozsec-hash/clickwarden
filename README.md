@@ -39,9 +39,9 @@ belong to their owners; Clickwarden is not affiliated with or endorsed by any of
 ## What you can inspect and control
 
 - **You choose the provider and accept the data flow.** Nothing is sent until you run
-  `clickwarden configure`, read the notice and accept it by **typing the provider's host name**
-  (a tick box is too easy to click through). Acceptance is bound to that host; change the
-  host and you must accept again. `clickwarden configure --revoke-consent` (or the *Revoke
+  `clickwarden configure`, read the notice and answer a confirmation dialog that names the
+  provider and lists what is sent (the default button is **No**). Acceptance is bound to that
+  host; change the host and you are asked again. `clickwarden configure --revoke-consent` (or the *Revoke
   consent* button) withdraws it. Loopback servers need no acceptance because nothing leaves
   the machine.
 - **You always see where your screen goes.** The control panel permanently shows

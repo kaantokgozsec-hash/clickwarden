@@ -207,9 +207,9 @@ class ConfigureLogicTests(IsolatedConfig):
         base.update(kwargs)
         return base
 
-    def test_remote_save_requires_typing_the_host_to_accept(self):
+    def test_remote_save_requires_accepting_the_data_flow(self):
         errors = configure.save_form(self.values(api_key="k"), accepted=False)
-        self.assertTrue(any("Type vision.example.com" in e for e in errors))
+        self.assertTrue(any("accept" in e and "vision.example.com" in e for e in errors))
         self.assertEqual(providers.load_config(), {})
         self.assertEqual(configure.save_form(self.values(api_key="k"), accepted=True), [])
         config = providers.load_config()
@@ -312,13 +312,55 @@ class ConfigureLogicTests(IsolatedConfig):
 
 
 class ConsentFlowTests(IsolatedConfig):
-    def test_typed_host_must_match_exactly_not_just_be_nonempty(self):
-        settings = ready()
-        for typed in ("vision.example.com", " VISION.example.com ", "vision.example.com/"):
-            self.assertTrue(configure.host_matches(typed, settings), typed)
-        for typed in ("", "yes", "I agree", "example.com", "vision.example.com.evil.net", None):
-            self.assertFalse(configure.host_matches(typed, settings), repr(typed))
-        self.assertFalse(configure.host_matches("anything", Settings()))
+    def test_confirmation_dialog_names_the_host_the_data_and_the_risks(self):
+        text = configure.consent_question(ready())
+        self.assertIn("send screenshots of your screen to vision.example.com", text)
+        self.assertIn("What is sent:", text)
+        self.assertIn("What can go wrong:", text)
+        self.assertIn("Choose No", text)
+        self.assertIn("Revoke consent", text)
+
+    def test_saving_a_cloud_provider_asks_and_declining_saves_nothing(self):
+        import tkinter
+        from tkinter import messagebox, ttk
+        calls = []
+
+        def walk(widget):
+            yield widget
+            for child in widget.winfo_children():
+                yield from walk(child)
+
+        def drive(answer):
+            def fake_mainloop(window):
+                window.update()
+                widgets = list(walk(window))
+                combo = next(w for w in widgets if isinstance(w, ttk.Combobox))
+                buttons = {w.cget("text"): w for w in widgets if isinstance(w, ttk.Button)}
+                combo.set(providers.PRESETS["openrouter"]["label"])
+                combo.event_generate("<<ComboboxSelected>>")
+                window.update()
+                entries = [w for w in widgets if isinstance(w, ttk.Entry) and str(w.cget("show")) == "\u2022"]
+                entries[0].insert(0, "sk-test-key")
+                with patch.object(messagebox, "askyesno", side_effect=lambda *a, **k: calls.append((a, k)) or answer), \
+                        patch.object(messagebox, "showinfo"):
+                    buttons["Save"].invoke()
+                window.update()
+                try:
+                    window.destroy()
+                except tkinter.TclError:
+                    pass
+            return fake_mainloop
+
+        with patch.object(tkinter.Tk, "mainloop", drive(False)):
+            configure.launch()
+        self.assertEqual(providers.load_config(), {})
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1].get("default"), "no")
+        self.assertIn("openrouter.ai", calls[0][0][0])
+        with patch.object(tkinter.Tk, "mainloop", drive(True)):
+            configure.launch()
+        self.assertEqual(providers.load_config()["consent"]["host"], "openrouter.ai")
+        self.assertEqual(providers.resolve().problem, "")
 
     def test_revoking_consent_blocks_cloud_use_again(self):
         values = ConfigureLogicTests.values(self, api_key="k")
