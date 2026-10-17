@@ -87,6 +87,26 @@ def clean_timeout(value, default: float = 20.0) -> float:
     return min(120.0, max(3.0, seconds)) if seconds == seconds else default
 
 
+RESERVED_BODY_KEYS = {"model", "messages", "stream", "stream_options", "max_tokens", "temperature"}
+
+
+def clean_extra_body(value) -> dict:
+    """Extra top-level request fields a provider documents (for example ``{"reasoning": {"enabled": false}}``).
+
+    Core fields cannot be overridden, and the whole thing stays small and JSON-safe.
+    """
+    if not isinstance(value, dict):
+        return {}
+    out = {}
+    for name, val in value.items():
+        if isinstance(name, str) and 0 < len(name) <= 64 and name not in RESERVED_BODY_KEYS:
+            out[name] = val
+    try:
+        return out if len(json.dumps(out)) <= 2000 else {}
+    except (TypeError, ValueError):
+        return {}
+
+
 def clean_headers(value) -> dict:
     """Keep only well-formed ``{name: value}`` string pairs; refuse CR/LF injection."""
     if not isinstance(value, dict):
@@ -109,6 +129,7 @@ class Settings:
     send_thinking_disabled: bool = False
     include_usage: bool = True
     timeout: float = 20.0  # seconds to wait for a connection and for each stretch of silence
+    extra_body: dict = field(default_factory=dict)
     api_key: str = ""
     problem: str = ""
 
@@ -189,6 +210,11 @@ def resolve() -> Settings:
         headers.update(clean_headers(json.loads(env("EXTRA_HEADERS", "{}"))))
     except ValueError:
         pass
+    extra_body = clean_extra_body(config.get("extra_body"))
+    try:
+        extra_body.update(clean_extra_body(json.loads(env("EXTRA_BODY", "{}"))))
+    except ValueError:
+        pass
     coord = env("COORD_SPACE", str(config.get("coord_space", "pixels")))
     settings = Settings(
         preset=str(config.get("preset", "custom")),
@@ -199,6 +225,7 @@ def resolve() -> Settings:
         send_thinking_disabled=env_flag("SEND_THINKING_DISABLED", bool(config.get("send_thinking_disabled", False))),
         include_usage=bool(config.get("include_usage", True)),
         timeout=clean_timeout(env("TIMEOUT") or config.get("timeout_s")),
+        extra_body=extra_body,
         api_key=env("API_KEY") or load_key(),
     )
     if not settings.base_url or not settings.model:

@@ -56,6 +56,7 @@ LOCATE_SYSTEM = (
 # A found box is ~40 tokens; reasoning (CLICKWARDEN_THINKING=1) needs the old headroom.
 LOCATE_MAX_TOKENS = env_int("LOCATE_MAX_TOKENS", 160 if DISABLE_THINKING else 512)
 NOT_VISIBLE = "NOT_VISIBLE"
+MAX_TOKENS_CEILING = 4096
 
 COORDS_PIXELS = "Coordinates are IMAGE pixels, origin top-left."
 COORDS_NORM1000 = ("Coordinates are normalized to a 0-1000 grid on both axes (0,0 top-left, 1000,1000 "
@@ -185,6 +186,7 @@ class StreamResult:
     model: str = ""
     error: str | None = None
     retries: int = 0
+    reasoning_budget_grown: bool = False
 
     @property
     def ok(self) -> bool:
@@ -234,6 +236,7 @@ class VisionClient:
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self.usage_reports = 0
+        self._budget_scale = 1
         self.before_request: Callable[[], None] | None = None
 
     # -- session lifecycle -------------------------------------------------
@@ -294,6 +297,7 @@ class VisionClient:
             return StreamResult(error=self.settings.problem or
                                 "No vision provider is configured. Ask the user to run `clickwarden configure`.")
 
+        max_tokens = min(MAX_TOKENS_CEILING, max_tokens * self._budget_scale)
         payload = {
             "model": self.model,
             "messages": [
@@ -309,6 +313,7 @@ class VisionClient:
             "temperature": temperature,
             "stream": True,
         }
+        payload.update(self.settings.extra_body)  # provider-documented fields; core fields were filtered out
         if self.settings.include_usage:
             payload["stream_options"] = {"include_usage": True}
         if self.settings.send_thinking_disabled and (
@@ -323,12 +328,24 @@ class VisionClient:
         for attempt in range(2):
             result = self._stream_once(payload, headers, on_partial, t0)
             result.retries = attempt
+            if (not result.content and not result.error and
+                    result.completion_tokens >= 0.9 * payload["max_tokens"]):
+                break  # out of answer budget, not a dropped stream: repeating at the same size cannot help
             transient = result.error and (result.error.startswith(("ReadTimeout:", "ConnectTimeout:", "ConnectionError:"))
                                             or result.error.startswith(("HTTP 502:", "HTTP 503:", "HTTP 504:")))
             if result.content or (result.error and not transient):
                 return result
             if attempt == 0:
                 time.sleep(0.12)
+        # A "thinking" model can spend the whole answer budget on hidden reasoning and return nothing.
+        # The evidence is an empty reply that used (nearly) every token; grow the budget once and remember it.
+        if (not result.content and not result.error and payload["max_tokens"] < MAX_TOKENS_CEILING
+                and result.completion_tokens >= 0.9 * payload["max_tokens"]):
+            self._budget_scale = min(8, self._budget_scale * 4)
+            payload["max_tokens"] = min(MAX_TOKENS_CEILING, payload["max_tokens"] * 4)
+            result = self._stream_once(payload, headers, on_partial, t0)
+            result.retries += 1
+            result.reasoning_budget_grown = True
         return result
 
     def _stream_once(self, payload: dict, headers: dict,
@@ -351,8 +368,11 @@ class VisionClient:
             buf: list[str] = []
             last_content = time.monotonic()
             for raw in resp.iter_lines():
-                if time.monotonic() - last_content > self.timeout:
+                now = time.monotonic()
+                if now - last_content > self.timeout:
                     raise requests.ReadTimeout(f"No model content for {self.timeout:g} seconds")
+                if raw:
+                    last_content = now  # reasoning chunks and keep-alives are signs of life, not silence
                 if not raw or not raw.startswith(b"data: "):
                     continue
                 chunk = raw[6:]

@@ -68,13 +68,25 @@ def form_to_settings(values: dict) -> tuple[Settings, list[str]]:
                 raise ValueError
         except ValueError:
             errors.append("Timeout must be a number of seconds between 3 and 120.")
+    extra_body: dict = {}
+    raw_body = (values.get("extra_body") or "").strip()
+    if raw_body:
+        try:
+            parsed_body = json.loads(raw_body)
+        except ValueError:
+            parsed_body = None
+        extra_body = providers.clean_extra_body(parsed_body)
+        if not isinstance(parsed_body, dict) or len(extra_body) != len(parsed_body) or not extra_body:
+            errors.append('Extra request fields must be a small JSON object such as {"reasoning": {"enabled": false}} '
+                          "and cannot replace model, messages, stream, max_tokens or temperature.")
+            extra_body = {}
     coord = values.get("coord_space") or "pixels"
     if coord not in COORD_SPACES:
         errors.append("Coordinate format must be pixels or norm1000.")
     settings = Settings(preset=values.get("preset") or "custom", base_url=url, model=model, headers=headers,
                         coord_space=coord if coord in COORD_SPACES else "pixels",
                         send_thinking_disabled=bool(values.get("send_thinking_disabled")),
-                        include_usage=bool(values.get("include_usage", True)), timeout=timeout,
+                        include_usage=bool(values.get("include_usage", True)), timeout=timeout, extra_body=extra_body,
                         api_key=(values.get("api_key") or "").strip())
     for name in ("price_in", "price_out"):
         text = str(values.get(name) or "").strip()
@@ -114,7 +126,7 @@ def save_form(values: dict, accepted: bool) -> list[str]:
     config.update(preset=settings.preset, base_url=settings.base_url, model=settings.model,
                   headers=settings.headers, coord_space=settings.coord_space,
                   send_thinking_disabled=settings.send_thinking_disabled, include_usage=settings.include_usage,
-                  timeout_s=settings.timeout)
+                  timeout_s=settings.timeout, extra_body=settings.extra_body)
     for name in ("price_in", "price_out"):
         text = str(values.get(name) or "").strip()
         if text:
@@ -174,7 +186,7 @@ def launch():  # pragma: no cover - interactive window
         except tk.TclError:
             pass
     root.title("Clickwarden — vision provider and data sharing")
-    root.minsize(660, 780)
+    root.minsize(660, 860)
     frame = ttk.Frame(root, padding=14)
     frame.pack(fill="both", expand=True)
     frame.columnconfigure(1, weight=1)
@@ -233,6 +245,12 @@ def launch():  # pragma: no cover - interactive window
     headers_box.insert("1.0", json.dumps(config.get("headers", {})) if config.get("headers") else "")
     row(8, "Extra headers (JSON)", headers_box)
     ttk.Label(frame, text=HEADERS_WARNING, foreground="#8a5a00", wraplength=470).grid(row=9, column=1, sticky="w")
+    body_box = tk.Text(frame, height=2, width=40)
+    body_box.insert("1.0", json.dumps(config.get("extra_body", {})) if config.get("extra_body") else "")
+    row(13, "Extra request fields (JSON)", body_box)
+    ttk.Label(frame, text='Only fields your provider documents. Example to turn thinking off on OpenRouter: '
+                          '{"reasoning": {"enabled": false}}. Thinking models can take 20+ seconds per answer.',
+              foreground="#555", wraplength=470).grid(row=14, column=1, sticky="w")
     row(10, "Provider option", ttk.Checkbutton(frame, text='Send "thinking": {"type": "disabled"} (only if your provider accepts it)',
                                               variable=var["send_thinking_disabled"]))
     row(11, "", ttk.Checkbutton(frame, text="Ask the server to report token usage (turn off if it errors)",
@@ -247,16 +265,17 @@ def launch():  # pragma: no cover - interactive window
     row(12, "Prices / timeout", prices)
 
     notice = tk.Text(frame, height=11, wrap="word", background="#f6f6f6")
-    notice.grid(row=13, column=0, columnspan=2, sticky="nsew", pady=(10, 4))
-    frame.rowconfigure(13, weight=1)
+    notice.grid(row=15, column=0, columnspan=2, sticky="nsew", pady=(10, 4))
+    frame.rowconfigure(15, weight=1)
     consent_label = ttk.Label(frame, text="", wraplength=620, justify="left")
-    consent_label.grid(row=14, column=0, columnspan=2, sticky="w")
-    ttk.Label(frame, textvariable=status, wraplength=600, foreground="#a00").grid(row=15, column=0, columnspan=2, sticky="w")
+    consent_label.grid(row=16, column=0, columnspan=2, sticky="w")
+    ttk.Label(frame, textvariable=status, wraplength=600, foreground="#a00").grid(row=17, column=0, columnspan=2, sticky="w")
 
     def current_values():
         values = {name: v.get() for name, v in var.items()}
         values["preset"] = by_label.get(values["preset"], "custom")
         values["headers"] = headers_box.get("1.0", "end").strip()
+        values["extra_body"] = body_box.get("1.0", "end").strip()
         return values
 
     def refresh(*_):
@@ -342,7 +361,7 @@ def launch():  # pragma: no cover - interactive window
         refresh()
 
     buttons = ttk.Frame(frame)
-    buttons.grid(row=16, column=0, columnspan=2, sticky="e", pady=(8, 0))
+    buttons.grid(row=18, column=0, columnspan=2, sticky="e", pady=(8, 0))
     ttk.Button(buttons, text="Revoke consent", command=revoke).pack(side="left", padx=4)
     ttk.Button(buttons, text="Remove stored key", command=remove_key).pack(side="left", padx=4)
     ttk.Button(buttons, text="Test connection", command=test).pack(side="left", padx=4)

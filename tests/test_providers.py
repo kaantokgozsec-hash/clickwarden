@@ -250,6 +250,82 @@ class TimeoutAndFreeEndpointTests(IsolatedConfig):
         self.assertEqual(configure.form_to_settings({**values, "timeout": ""})[0].timeout, 20.0)
 
 
+class ThinkingModelTests(IsolatedConfig):
+    def run_with(self, settings, outcomes):
+        client = VisionClient(settings=settings)
+        sent = []
+
+        def fake(payload, headers, on_partial, t0):
+            sent.append(payload["max_tokens"])
+            return outcomes[min(len(sent), len(outcomes)) - 1]  # the last outcome repeats
+        with patch.object(client, "_stream_once", side_effect=fake):
+            first = client.stream_chat("s", "u", b"x", max_tokens=160)
+            second = client.stream_chat("s", "u", b"x", max_tokens=160)
+        client.close()
+        return client, first, second, sent
+
+    def test_a_thinking_model_that_runs_out_of_budget_is_retried_with_more_room(self):
+        outcomes = [StreamResult(content="", completion_tokens=160), StreamResult(content='{"ok":1}', completion_tokens=600),
+                    StreamResult(content='{"ok":2}', completion_tokens=590)]
+        client, first, second, sent = self.run_with(ready(), outcomes)
+        self.assertTrue(first.ok and first.reasoning_budget_grown)
+        self.assertEqual(sent, [160, 640, 640])  # grown once, remembered for the next call
+        self.assertTrue(second.ok and not second.reasoning_budget_grown)
+
+    def test_empty_replies_without_proof_of_truncation_are_not_retried(self):
+        client, first, _, sent = self.run_with(ready(), [StreamResult(content=""), StreamResult(content="")])
+        self.assertFalse(first.ok)
+        self.assertEqual(set(sent), {160})  # ordinary retries only, the budget never grows
+
+    def test_budget_growth_has_a_ceiling(self):
+        outcomes = [StreamResult(content="", completion_tokens=4096)] * 2
+        _, _, _, sent = self.run_with(ready(), outcomes)
+        self.assertLessEqual(max(sent), vision.MAX_TOKENS_CEILING)
+
+    def test_activity_that_is_not_content_does_not_count_as_silence(self):
+        import itertools
+        import time
+        from types import SimpleNamespace
+        client = VisionClient(settings=ready(timeout=10))
+        lines = [b': thinking', b'data: {"choices":[{"delta":{"reasoning":"hmm"}}]}',
+                 b'data: {"choices":[{"delta":{"content":"OK"}}]}', b"data: [DONE]"]
+        response = Mock(status_code=200)
+        response.iter_lines.side_effect = lambda: iter(lines)
+        ticks = itertools.count(0, 6)  # six seconds between lines: never more than the 10 s limit apart
+        fake_time = SimpleNamespace(monotonic=lambda: next(ticks), perf_counter=time.perf_counter,
+                                    sleep=lambda seconds: None)
+        with patch.object(client._session, "post", return_value=response), patch("clickwarden.vision.time", fake_time):
+            result = client.stream_chat("s", "u", b"x")
+        self.assertTrue(result.ok, result.error)
+        client.close()
+
+    def test_extra_request_fields_reach_the_payload_but_cannot_replace_core_fields(self):
+        body = providers.clean_extra_body({"reasoning": {"enabled": False}, "model": "evil", "messages": [],
+                                           "max_tokens": 9, "x" * 65: 1})
+        self.assertEqual(body, {"reasoning": {"enabled": False}})
+        self.assertEqual(providers.clean_extra_body({"big": "x" * 3000}), {})
+        self.assertEqual(providers.clean_extra_body(["no"]), {})
+        client = VisionClient(settings=ready(extra_body=body))
+        with patch.object(client, "_stream_once", return_value=StreamResult(content="ok")) as once:
+            client.stream_chat("s", "u", b"x")
+        payload = once.call_args.args[0]
+        self.assertEqual(payload["reasoning"], {"enabled": False})
+        self.assertNotEqual(payload["model"], "evil")
+        client.close()
+
+    def test_extra_fields_come_from_config_and_env_and_validate_in_the_form(self):
+        providers.save_config({"base_url": URL, "model": "m", "extra_body": {"reasoning": {"effort": "none"}}})
+        self.assertEqual(providers.resolve().extra_body, {"reasoning": {"effort": "none"}})
+        with patch.dict("os.environ", {"CLICKWARDEN_EXTRA_BODY": '{"reasoning": {"enabled": false}}'}):
+            self.assertEqual(providers.resolve().extra_body["reasoning"], {"enabled": False})
+        values = ConfigureLogicTests.values(self, api_key="k")
+        good = configure.form_to_settings({**values, "extra_body": '{"reasoning": {"enabled": false}}'})
+        self.assertEqual((good[1], good[0].extra_body), ([], {"reasoning": {"enabled": False}}))
+        for bad in ("{oops", '["list"]', '{"model": "x"}', "{}"):
+            self.assertTrue(any("Extra request fields" in e for e in
+                                configure.form_to_settings({**values, "extra_body": bad})[1]), bad)
+
+
 class DisclosureTests(unittest.TestCase):
     def test_remote_disclosure_names_host_data_and_controls(self):
         info = providers.disclosure(ready())
