@@ -246,6 +246,55 @@ class ConfigureLogicTests(IsolatedConfig):
         self.assertNotIn("sk-unique-123", json.dumps(summary))
         self.assertNotIn("sk-unique-123", (Path(self.folder.name) / "config.json").read_text(encoding="utf-8"))
 
+    def test_single_value_boxes_refuse_code_samples_and_huge_pastes(self):
+        accepts = configure.entry_accepts
+        self.assertTrue(accepts("nvapi-AbC123_def-456", configure.KEY_MAX))
+        self.assertTrue(accepts("nvapi-key\n", configure.KEY_MAX))      # a copy button's trailing newline
+        self.assertTrue(accepts("  nvapi-key  ", configure.KEY_MAX))
+        self.assertTrue(accepts("", configure.KEY_MAX))
+        self.assertFalse(accepts("import os\nclient = OpenAI(api_key=os.environ['K'])", configure.KEY_MAX))
+        self.assertFalse(accepts("two words", configure.KEY_MAX))
+        self.assertFalse(accepts("a" * (configure.KEY_MAX + 1), configure.KEY_MAX))
+        self.assertFalse(accepts("line1\nline2", configure.URL_MAX))
+
+    def test_pasting_a_sample_script_into_the_key_box_is_refused_instantly(self):
+        import base64
+        import os
+        import time
+        import tkinter
+        from tkinter import ttk
+        blob = ("from openai import OpenAI\nclient = OpenAI(api_key=os.environ[\"NVIDIA_API_KEY\"])\n"
+                "x = \"data:image/jpeg;base64," + base64.b64encode(os.urandom(9000)).decode() + "\"\n")
+        seen = {}
+
+        def walk(widget):
+            yield widget
+            for child in widget.winfo_children():
+                yield from walk(child)
+
+        def fake_mainloop(window):
+            window.update()
+            key_entry = next(w for w in walk(window) if isinstance(w, ttk.Entry) and str(w.cget("show")) == "•")
+            key_entry.focus_force()
+            window.clipboard_clear()
+            window.clipboard_append(blob)
+            started = time.monotonic()
+            key_entry.event_generate("<<Paste>>")
+            for _ in range(10):
+                window.update()
+            seen["seconds"], seen["held"] = time.monotonic() - started, key_entry.get()
+            window.clipboard_clear()
+            window.clipboard_append("nvapi-REALLY-A-KEY-123")
+            key_entry.event_generate("<<Paste>>")
+            window.update()
+            seen["key"] = key_entry.get()
+            window.destroy()
+        with patch.object(tkinter.Tk, "mainloop", fake_mainloop):
+            configure.launch()
+        self.assertEqual(seen["held"], "")
+        self.assertLess(seen["seconds"], 3)  # unfixed, a 12k-character paste held Tk for ~20 s
+        self.assertEqual(seen["key"], "nvapi-REALLY-A-KEY-123")
+
     def test_set_key_from_terminal_stores_it_without_echo_or_consent(self):
         with patch("getpass.getpass", return_value="  nvapi-terminal-key-123  ") as ask:
             self.assertEqual(configure.main(["--set-key"]), 0)

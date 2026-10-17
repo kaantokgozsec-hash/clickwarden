@@ -19,6 +19,21 @@ HEADERS_WARNING = ("Extra headers are for things like a provider's required app 
                    "software; provider terms of service apply to your account.")
 
 
+KEY_MAX = 512
+URL_MAX = 2048
+REFUSED_PASTE = ("Not accepted: that text is too long or has spaces or several lines. Paste only the value "
+                 "itself. For the API key that is just the key (NVIDIA keys start with nvapi-), not a code sample.")
+
+
+def entry_accepts(proposed: str, max_len: int) -> bool:
+    """Single-value boxes refuse code samples, images and other huge pastes (Tk stalls for minutes on them).
+
+    Whitespace is only allowed at the ends, where copy buttons often add a newline.
+    """
+    text = proposed.strip()
+    return len(proposed) <= max_len and not any(c.isspace() for c in text)
+
+
 def form_to_settings(values: dict) -> tuple[Settings, list[str]]:
     """Validate raw form text. Returns settings (key included if typed) and a list of problems."""
     errors: list[str] = []
@@ -134,6 +149,14 @@ def launch():  # pragma: no cover - interactive window
     typed = tk.StringVar()
     status = tk.StringVar()
 
+    def limited(parent, max_len, **options):
+        """ttk.Entry that refuses oversized or multi-line input before it ever reaches the widget."""
+        entry = ttk.Entry(parent, **options)
+        entry.configure(validate="key",
+                        validatecommand=(root.register(lambda proposed: entry_accepts(proposed, max_len)), "%P"),
+                        invalidcommand=(root.register(lambda: status.set(REFUSED_PASTE)),))
+        return entry
+
     def row(index, text, widget):
         ttk.Label(frame, text=text).grid(row=index, column=0, sticky="nw", pady=3, padx=(0, 10))
         widget.grid(row=index, column=1, sticky="ew", pady=3)
@@ -143,9 +166,9 @@ def launch():  # pragma: no cover - interactive window
                                                    state="readonly"))
     note = ttk.Label(frame, text="", wraplength=470, foreground="#555")
     note.grid(row=1, column=1, sticky="w")
-    row(2, "Endpoint URL", ttk.Entry(frame, textvariable=var["base_url"]))
-    row(3, "Model", ttk.Entry(frame, textvariable=var["model"]))
-    key_entry = row(4, "API key", ttk.Entry(frame, textvariable=var["api_key"], show="•"))
+    row(2, "Endpoint URL", limited(frame, URL_MAX, textvariable=var["base_url"]))
+    row(3, "Model", limited(frame, 200, textvariable=var["model"]))
+    key_entry = row(4, "API key", limited(frame, KEY_MAX, textvariable=var["api_key"], show="•"))
     key_note = ttk.Label(frame, text="", foreground="#555")
     key_note.grid(row=5, column=1, sticky="w")
     row(6, "Coordinate format", ttk.Combobox(frame, textvariable=var["coord_space"], values=list(COORD_SPACES),
@@ -161,9 +184,9 @@ def launch():  # pragma: no cover - interactive window
     row(11, "", ttk.Checkbutton(frame, text="Ask the server to report token usage (turn off if it errors)",
                                 variable=var["include_usage"]))
     prices = ttk.Frame(frame)
-    ttk.Entry(prices, textvariable=var["price_in"], width=9).pack(side="left")
+    limited(prices, 24, textvariable=var["price_in"], width=9).pack(side="left")
     ttk.Label(prices, text=" in / ").pack(side="left")
-    ttk.Entry(prices, textvariable=var["price_out"], width=9).pack(side="left")
+    limited(prices, 24, textvariable=var["price_out"], width=9).pack(side="left")
     ttk.Label(prices, text=" out  USD per 1M tokens (optional, for cost estimates)").pack(side="left")
     row(12, "Prices", prices)
 
@@ -174,7 +197,7 @@ def launch():  # pragma: no cover - interactive window
     consent_frame.grid(row=14, column=0, columnspan=2, sticky="ew")
     consent_label = ttk.Label(consent_frame, text="", wraplength=600, justify="left")
     consent_label.pack(anchor="w")
-    consent_entry = ttk.Entry(consent_frame, textvariable=typed)
+    consent_entry = limited(consent_frame, 253, textvariable=typed)
     consent_entry.pack(anchor="w", fill="x", pady=(2, 0))
     ttk.Label(frame, textvariable=status, wraplength=600, foreground="#a00").grid(row=15, column=0, columnspan=2, sticky="w")
 
@@ -191,8 +214,9 @@ def launch():  # pragma: no cover - interactive window
         notice.delete("1.0", "end")
         notice.insert("1.0", text)
         notice.config(state="disabled")
-        key_note.config(text="A key is already stored; leave blank to keep it." if providers.load_key() or
-                        providers.env("API_KEY") else "")
+        stored = bool(providers.load_key() or providers.env("API_KEY"))
+        key_note.config(text=("A key is already stored; leave blank to keep it. " if stored else "") +
+                        "Paste only the key itself, never a code sample.")
         if settings.local:
             consent_entry.state(["disabled"])
             consent_label.config(text="Local server: nothing leaves this computer, no acceptance needed.")

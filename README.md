@@ -79,7 +79,9 @@ python -m venv .venv
 ```
 
 `clickwarden configure` opens a window where you pick a provider, enter the model and key, read
-exactly what will be sent, and accept or decline. `clickwarden configure --show` prints the
+exactly what will be sent, and accept or decline. Paste only the key itself into the key box (the window refuses code samples and huge pastes). If pasting is a
+problem, `clickwarden configure --set-key` takes the key in the terminal with hidden input.
+`clickwarden configure --show` prints the
 non-secret settings. Then try:
 
 ```powershell
