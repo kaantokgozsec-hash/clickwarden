@@ -52,7 +52,9 @@ belong to their owners; Clickwarden is not affiliated with or endorsed by any of
 - **You can see and delete everything it stores, any time.** The settings window stays open
   after Save and has a **My data** tab listing every stored part (key, settings and consent,
   session and job records, layouts, saved screenshots, desktop shortcut) with its path, size and
-  a Delete button; *Delete everything* wipes it all (default button **No**). From a terminal:
+  a **View** button (read-only; your key is never shown) and a Delete button; *Delete everything* wipes it
+  all (default button **No**). Settings live in `%USERPROFILE%\.clickwarden\config`, deliberately not in AppData,
+  because packaged desktop apps get a redirected private copy of AppData that other programs cannot see. From a terminal:
   `clickwarden configure --where` lists it, `clickwarden configure --delete-all` deletes it
   (you type DELETE). Only these known locations are touched; links are never followed.
 - **Honest identity:** requests carry `User-Agent: clickwarden/<version>`. Clickwarden does not
