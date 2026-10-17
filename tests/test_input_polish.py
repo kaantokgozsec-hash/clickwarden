@@ -26,7 +26,8 @@ class InputPolishTests(unittest.TestCase):
         def send(n, events, size):
             calls.append([(events[i].ki.wScan, events[i].ki.dwFlags) for i in range(n)])
             return 3 if len(calls) == 1 else n
-        with patch.object(inp, 'SendInput', side_effect=send), self.assertRaises(OSError):
+        with patch.dict('os.environ', {'CLICKWARDEN_TYPE_BATCH': '1'}), \
+                patch.object(inp, 'SendInput', side_effect=send), self.assertRaises(OSError):
             inp.type_text('ab')
         self.assertEqual(calls[1], [(98, inp.KEYEVENTF_UNICODE | inp.KEYEVENTF_KEYUP)])
 
@@ -124,7 +125,7 @@ class InputPolishTests(unittest.TestCase):
             self.assertFalse(any(e.ki.wScan in (10,13) for e in events))
 
     def test_batch_boundary_does_not_split_surrogate_pair(self):
-        with patch.object(inp,'_send') as send:
+        with patch.dict('os.environ', {'CLICKWARDEN_TYPE_BATCH': '1'}), patch.object(inp,'_send') as send:
             inp.type_text('a'*499+'😀'+'b')
         batches = [[e.ki.wScan for e in call.args if not e.ki.dwFlags & inp.KEYEVENTF_KEYUP]
                    for call in send.call_args_list]
@@ -174,3 +175,22 @@ class InputPolishTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DefaultTypingPaceTests(unittest.TestCase):
+    def test_default_typing_is_paced_one_character_at_a_time(self):
+        with patch.object(inp, '_send') as send, patch.object(inp, '_input_wait') as wait:
+            inp.type_text('abc')
+        self.assertEqual([len(call.args) for call in send.call_args_list], [2, 2, 2])
+        self.assertEqual([call.args[0] for call in wait.call_args_list], [0.02, 0.02])
+
+    def test_pace_is_tunable_and_batching_is_opt_in(self):
+        with patch.dict('os.environ', {'CLICKWARDEN_TYPE_DELAY_MS': '35'}), \
+                patch.object(inp, '_send'), patch.object(inp, '_input_wait') as wait:
+            inp.type_text('ab')
+        self.assertEqual(wait.call_args_list[0].args[0], 0.035)
+        with patch.dict('os.environ', {'CLICKWARDEN_TYPE_BATCH': '1'}), \
+                patch.object(inp, '_send') as send, patch.object(inp, '_input_wait') as wait:
+            inp.type_text('abc')
+        self.assertEqual(send.call_count, 1)
+        wait.assert_not_called()

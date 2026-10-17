@@ -24,6 +24,7 @@ import time
 from contextlib import contextmanager
 from ctypes import wintypes
 
+from .config import env_flag, env_float
 from .win32core import user32, kernel32, virtual_screen
 from .input_identity import CLICKWARDEN_EXTRA_INFO
 
@@ -511,11 +512,15 @@ def _input_wait(seconds):
         time.sleep(min(.02, remaining))
 
 
+DEFAULT_TYPE_DELAY_MS = 20.0
+
+
 def type_text(text: str, wpm: int = 0) -> dict:
     """Type unicode text via scan-coded Unicode events.
 
-    wpm=0 sends bounded batches without splitting surrogate pairs. Newlines use
-    Enter; CRLF is one newline. wpm>0 adds cancellable character delays.
+    wpm=0 types one character at a time with a short cancellable gap (20 ms by default; set
+    CLICKWARDEN_TYPE_BATCH=1 for bounded one-syscall batches that never split surrogate pairs).
+    Newlines use Enter; CRLF is one newline. wpm>0 sets the pace explicitly.
     """
     if not isinstance(text, str):
         raise ValueError('text must be a string')
@@ -542,7 +547,7 @@ def type_text(text: str, wpm: int = 0) -> dict:
                                 ki=KEYBDINPUT(0, code, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0, 0)))
         return events
 
-    if wpm == 0:
+    if wpm == 0 and env_flag("TYPE_BATCH", False):
         events = []
         for ch in normalized:
             next_events = character_events(ch)
@@ -557,7 +562,11 @@ def type_text(text: str, wpm: int = 0) -> dict:
             foreground_guard.check()
             _send(*events)
     else:
-        delay = 60.0 / (wpm * 5)  # avg word = 5 chars
+        # Default pace (wpm=0): modern apps such as the new Notepad read each Unicode key lazily and
+        # drop or repeat characters when they arrive faster than ~20 ms apart (measured: bursts and
+        # 1-3 ms gaps corrupt the text). CLICKWARDEN_TYPE_BATCH=1 restores one-syscall bursts for
+        # apps that cope; CLICKWARDEN_TYPE_DELAY_MS tunes the gap.
+        delay = 60.0 / (wpm * 5) if wpm else max(0.0, env_float("TYPE_DELAY_MS", DEFAULT_TYPE_DELAY_MS)) / 1000.0
         for index, ch in enumerate(normalized):
             failsafe.check()
             foreground_guard.check()
