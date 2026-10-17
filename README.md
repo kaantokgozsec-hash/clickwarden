@@ -163,6 +163,10 @@ These reduce risk; they do not remove it. Vision "verification" is a model's opi
 `sessions.py` MCP sessions · `accessibility.py` + `uia_probe.ps1` UI Automation reads ·
 `grounding.py` fail-closed answer validation · `server.py` MCP tools · `tests/` offline suite.
 
+Desktop shortcut with the Clickwarden icon (opens the settings window): `python scripts/create_shortcut.py`.
+Check your provider safely: `python scripts/provider_check.py` shows a neutral test window, sends only that window
+and compares where the model says the button is with where it really is.
+
 Preview the panel without running anything: `python scripts/preview_panel.py`.
 
 ## Tests

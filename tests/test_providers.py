@@ -368,6 +368,35 @@ class ConfigureLogicTests(IsolatedConfig):
         self.assertLess(seen["seconds"], 3)  # unfixed, a 12k-character paste held Tk for ~20 s
         self.assertEqual(seen["key"], "nvapi-REALLY-A-KEY-123")
 
+    def test_app_icon_is_a_real_multi_size_ico_and_the_window_uses_it(self):
+        from PIL import Image
+        icon = configure.app_icon_path()
+        self.assertIsNotNone(icon)
+        with Image.open(icon) as image:
+            self.assertGreaterEqual(set(image.info["sizes"]), {(16, 16), (32, 32), (48, 48), (256, 256)})
+        import ctypes
+        import tkinter
+        seen = {}
+
+        def window_icon(window):
+            window.update()
+            hwnd = ctypes.windll.user32.GetParent(window.winfo_id()) or window.winfo_id()
+            return ctypes.windll.user32.SendMessageW(hwnd, 0x007F, 1, 0)  # WM_GETICON, ICON_BIG
+
+        plain = tkinter.Tk()
+        plain.withdraw()
+        control = window_icon(plain)
+        plain.destroy()
+
+        def fake_mainloop(window):
+            seen["icon"] = window_icon(window)
+            window.destroy()
+        with patch.object(tkinter.Tk, "mainloop", fake_mainloop),                 patch.object(configure, "claim_taskbar_identity") as claim:
+            configure.launch()
+        claim.assert_called_once()
+        self.assertEqual(control, 0)          # a stock Tk window has no icon of its own (shows the Python one)
+        self.assertNotEqual(seen["icon"], 0)  # the settings window carries the Clickwarden icon
+
     def test_set_key_from_terminal_stores_it_without_echo_or_consent(self):
         with patch("getpass.getpass", return_value="  nvapi-terminal-key-123  ") as ask:
             self.assertEqual(configure.main(["--set-key"]), 0)

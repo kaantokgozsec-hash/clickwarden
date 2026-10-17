@@ -141,12 +141,38 @@ def describe() -> dict:
             "config_dir": str(providers.config_dir())}
 
 
+APP_ID = "Clickwarden.Settings"
+
+
+def app_icon_path():
+    from pathlib import Path
+    path = Path(__file__).resolve().parent / "assets" / "clickwarden.ico"
+    return path if path.is_file() else None
+
+
+def claim_taskbar_identity() -> None:
+    """Own AppUserModelID so Windows shows the Clickwarden icon, not the generic Python one, on the taskbar."""
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:
+        pass
+
+
 def launch():  # pragma: no cover - interactive window
     import tkinter as tk
     from tkinter import messagebox, ttk
 
     config = providers.load_config()
+    claim_taskbar_identity()
     root = tk.Tk()
+    icon = app_icon_path()
+    if icon:
+        try:
+            root.iconbitmap(str(icon))
+            root.iconbitmap(default=str(icon))  # dialogs opened by this window use it too
+        except tk.TclError:
+            pass
     root.title("Clickwarden — vision provider and data sharing")
     root.minsize(660, 780)
     frame = ttk.Frame(root, padding=14)
