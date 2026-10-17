@@ -25,7 +25,7 @@ over the internet.
 Screenshots may be written to disk only if you enable the optional screenshot-export tool
 (`CLICKWARDEN_TEXT_ONLY=0`). Session and job records (action names, statuses, timings, error text,
 task goals) are saved under `~/.clickwarden/`; they contain no images. Settings and the encrypted key
-live in `%APPDATA%\clickwarden`.
+live in `%USERPROFILE%\.clickwarden\config`.
 
 ## Things that can go wrong
 

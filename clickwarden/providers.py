@@ -7,8 +7,11 @@ as Ollama or LM Studio need no acceptance: the data stays on the computer).
 
 Nothing here touches the network except ``test_connection``, which the settings
 window runs only after the user confirms. Non-secret settings live in
-``%APPDATA%\\clickwarden\\config.json``; the API key is encrypted with Windows DPAPI
-(``%APPDATA%\\clickwarden\\key.dpapi``) unless ``CLICKWARDEN_API_KEY`` is set.
+``%USERPROFILE%\\.clickwarden\\config\\config.json``; the API key is encrypted with Windows DPAPI
+(``...\\config\\key.dpapi``) unless ``CLICKWARDEN_API_KEY`` is set. It is deliberately not under
+``%APPDATA%``: processes started by a packaged (MSIX) desktop app get a private, redirected copy of
+AppData, so a settings window started from the desktop and an MCP server started by such an app would
+silently see different files. The user profile folder is shared by both.
 """
 
 from __future__ import annotations
@@ -63,7 +66,51 @@ def config_dir() -> Path:
     override = env("CONFIG_DIR")
     if override:
         return Path(override)
+    return Path.home() / ".clickwarden" / "config"
+
+
+def legacy_config_dir() -> Path:
+    """Where 0.1.0 pre-release builds kept settings (redirected for packaged apps; see module docstring)."""
     return Path(os.environ.get("APPDATA") or Path.home() / ".config") / "clickwarden"
+
+
+LEGACY_FILES = ("config.json", "key.dpapi")
+
+
+def migrate_legacy(legacy: Path | None = None, target: Path | None = None) -> list[str]:
+    """Move settings and key from the old AppData folder into the shared folder, once.
+
+    Only fills files that are missing in the target and removes the old copy after a verified copy, so
+    no encrypted key is left lying in two places. Returns the names moved.
+    """
+    legacy = legacy or legacy_config_dir()
+    target = target or config_dir()
+    moved = []
+    try:
+        if legacy.resolve() == target.resolve() or not legacy.is_dir():
+            return moved
+        for name in LEGACY_FILES:
+            source, destination = legacy / name, target / name
+            if not source.is_file() or destination.exists():
+                continue
+            data = source.read_bytes()
+            target.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+            if destination.read_bytes() == data:
+                source.unlink(missing_ok=True)
+                moved.append(name)
+        try:
+            legacy.rmdir()
+        except OSError:
+            pass
+    except OSError:
+        pass
+    return moved
+
+
+def _migrate_once() -> None:
+    if not env("CONFIG_DIR"):  # an explicit CONFIG_DIR means the caller owns the location
+        migrate_legacy()
 
 
 def host_of(url: str) -> str:
@@ -149,6 +196,7 @@ class Settings:
 
 
 def load_config() -> dict:
+    _migrate_once()
     try:
         data = json.loads((config_dir() / "config.json").read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
@@ -178,6 +226,7 @@ def save_key(key: str) -> None:
 
 
 def load_key() -> str:
+    _migrate_once()
     try:
         import win32crypt
         blob = base64.b64decode((config_dir() / "key.dpapi").read_text(encoding="ascii"))

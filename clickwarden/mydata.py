@@ -94,6 +94,56 @@ def inventory(home: Path | None = None) -> list[dict]:
     return rows
 
 
+TEXT_VIEWABLE = ("settings", "sessions", "jobs", "layouts")  # the key is never shown; screenshots open as a folder
+MAX_VIEW_BYTES = 200_000
+MAX_LISTED = 300
+
+
+def list_files(name: str, home: Path | None = None) -> list[dict]:
+    """Files inside one viewable item, newest first: [{"name": relative path, "bytes": n, "modified": ts}]."""
+    if name not in TEXT_VIEWABLE:
+        return []
+    base = locate(name, home)
+    if _is_link(base) or not base.exists():
+        return []
+    if base.is_file():
+        return [{"name": base.name, "bytes": base.stat().st_size, "modified": base.stat().st_mtime}]
+    found = []
+    for root, dirs, names in os.walk(base, followlinks=False):
+        dirs[:] = [d for d in dirs if not _is_link(Path(root) / d)]
+        for file_name in names:
+            path = Path(root) / file_name
+            if _is_link(path):
+                continue
+            try:
+                info = path.stat()
+            except OSError:
+                continue
+            found.append({"name": str(path.relative_to(base)), "bytes": info.st_size, "modified": info.st_mtime})
+    found.sort(key=lambda row: row["modified"], reverse=True)
+    return found[:MAX_LISTED]
+
+
+def read_text(name: str, relative: str, home: Path | None = None) -> str:
+    """Read one listed file as text for the viewer. Refuses the key, other items, links and escapes."""
+    if name not in TEXT_VIEWABLE:
+        raise PermissionError(f"{name} cannot be shown")
+    base = locate(name, home)
+    target = base if base.is_file() else (base / relative)
+    if base.is_file() and relative != base.name:
+        raise PermissionError("not part of this item")
+    resolved_base = base.resolve()
+    resolved = target.resolve()
+    if not base.is_file() and resolved_base not in resolved.parents:
+        raise PermissionError("outside this item")
+    if _is_link(target) or not target.is_file():
+        raise PermissionError("not a regular file")
+    with open(target, "rb") as handle:
+        data = handle.read(MAX_VIEW_BYTES + 1)
+    text = data[:MAX_VIEW_BYTES].decode("utf-8", errors="replace")
+    return text + ("\n\n[... shown only the first %d bytes ...]" % MAX_VIEW_BYTES if len(data) > MAX_VIEW_BYTES else "")
+
+
 def human_size(size: int) -> str:
     for unit in ("B", "KB", "MB", "GB"):
         if size < 1024 or unit == "GB":

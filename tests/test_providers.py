@@ -691,3 +691,66 @@ class SkillDocsTests(unittest.TestCase):
             self.assertEqual(sorted(n for n in named if n not in tools and n != "use_my_computer"), [], path)
         skill = (ROOT / "skills" / "clickwarden" / "SKILL.md").read_text(encoding="utf-8")
         self.assertTrue(skill.startswith("---\nname: clickwarden\n"))
+
+
+class ViewerTests(MyDataTests):
+    def test_listing_and_reading_stay_inside_the_item(self):
+        names = [row["name"] for row in mydata.list_files("sessions", self.home)]
+        self.assertEqual(names, ["a.txt"])
+        self.assertEqual(mydata.read_text("sessions", "a.txt", self.home), "x" * 10)
+        for bad in ("../jobs/a.txt", "..\jobs\a.txt", "nope.txt", "."):
+            with self.subTest(bad=bad), self.assertRaises((PermissionError, OSError)):
+                mydata.read_text("sessions", bad, self.home)
+
+    def test_the_key_and_shortcut_can_never_be_shown(self):
+        for name in ("key", "shortcut", "shots", "bogus"):
+            self.assertEqual(mydata.list_files(name, self.home), [])
+            with self.assertRaises(PermissionError):
+                mydata.read_text(name, "key.dpapi", self.home)
+
+    def test_settings_view_is_the_config_file_only(self):
+        rows = mydata.list_files("settings", self.home)
+        self.assertEqual([r["name"] for r in rows], ["config.json"])
+        self.assertIn('"model"', mydata.read_text("settings", "config.json", self.home))
+        with self.assertRaises(PermissionError):
+            mydata.read_text("settings", "key.dpapi", self.home)
+
+    def test_big_files_are_cut_and_labelled(self):
+        (self.home / ".clickwarden" / "jobs" / "big.txt").write_text("y" * (mydata.MAX_VIEW_BYTES + 50))
+        text = mydata.read_text("jobs", "big.txt", self.home)
+        self.assertIn("shown only the first", text)
+        self.assertLess(len(text), mydata.MAX_VIEW_BYTES + 200)
+
+
+class LegacyMigrationTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.old, self.new = self.root / "AppData" / "clickwarden", self.root / "home" / "config"
+        self.old.mkdir(parents=True)
+        (self.old / "config.json").write_text('{"model": "m"}')
+        (self.old / "key.dpapi").write_text("blob")
+
+    def test_default_location_is_the_shared_profile_folder_not_appdata(self):
+        with patch.dict("os.environ", {"CLICKWARDEN_CONFIG_DIR": ""}):
+            self.assertEqual(providers.config_dir(), Path.home() / ".clickwarden" / "config")
+            self.assertNotIn("AppData", str(providers.config_dir()))
+
+    def test_old_files_move_once_and_are_not_left_behind(self):
+        self.assertEqual(sorted(providers.migrate_legacy(self.old, self.new)), ["config.json", "key.dpapi"])
+        self.assertEqual((self.new / "key.dpapi").read_text(), "blob")
+        self.assertFalse(self.old.exists())
+        self.assertEqual(providers.migrate_legacy(self.old, self.new), [])
+
+    def test_existing_new_settings_are_never_overwritten(self):
+        self.new.mkdir(parents=True)
+        (self.new / "config.json").write_text('{"model": "newer"}')
+        self.assertEqual(providers.migrate_legacy(self.old, self.new), ["key.dpapi"])
+        self.assertEqual((self.new / "config.json").read_text(), '{"model": "newer"}')
+        self.assertTrue((self.old / "config.json").exists())  # kept: not moved, so not lost
+
+    def test_explicit_config_dir_disables_automatic_migration(self):
+        with patch.dict("os.environ", {"CLICKWARDEN_CONFIG_DIR": str(self.new)}), \
+                patch.object(providers, "migrate_legacy") as migrate:
+            providers.load_config()
+        migrate.assert_not_called()

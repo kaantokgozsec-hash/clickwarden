@@ -173,6 +173,8 @@ def claim_taskbar_identity() -> None:
 
 def launch():  # pragma: no cover - interactive window
     import os
+    import subprocess
+    import time
     import tkinter as tk
     from tkinter import messagebox, ttk
 
@@ -444,8 +446,15 @@ def launch():  # pragma: no cover - interactive window
         ttk.Label(data_tab, text=item_label, font=("Segoe UI", 10, "bold")).grid(row=base, column=0, sticky="w")
         summary = ttk.Label(data_tab, text="", wraplength=400, justify="left")
         summary.grid(row=base, column=1, sticky="w", padx=8)
-        button = ttk.Button(data_tab, text="Delete…", command=lambda n=item: delete_item(n))
-        button.grid(row=base, column=2, sticky="e")
+        actions = ttk.Frame(data_tab)
+        actions.grid(row=base, column=2, sticky="e")
+        if item in mydata.TEXT_VIEWABLE:
+            ttk.Button(actions, text="View", command=lambda n=item: view_item(n)).pack(side="left", padx=2)
+        elif item == "shots":
+            ttk.Button(actions, text="Open folder",
+                       command=lambda n=item: open_folder(mydata.locate(n))).pack(side="left", padx=2)
+        button = ttk.Button(actions, text="Delete…", command=lambda n=item: delete_item(n))
+        button.pack(side="left", padx=2)
         ttk.Label(data_tab, text=item_note, wraplength=560, foreground="#555").grid(row=base + 1, column=0, columnspan=3, sticky="w")
         path_label = ttk.Label(data_tab, text="", foreground="#888", wraplength=600)
         path_label.grid(row=base + 2, column=0, columnspan=3, sticky="w", pady=(0, 8))
@@ -455,16 +464,63 @@ def launch():  # pragma: no cover - interactive window
     footer = ttk.Frame(data_tab)
     footer.grid(row=31, column=0, columnspan=3, sticky="e", pady=10)
 
-    def open_folder():
-        folder = providers.config_dir()
-        if folder.is_dir():
-            os.startfile(folder)
-        else:
-            status.set(f"The settings folder does not exist (or cannot be read) from this window: {folder}")
+    def open_folder(folder=None):
+        folder = folder or providers.config_dir()
+        status.set("")
+        if not folder.is_dir():
+            status.set(f"That folder does not exist (or cannot be read) from this window: {folder}")
+            return
+        try:
+            subprocess.Popen(["explorer.exe", str(folder)])
+            status_message.set(f"Opened {folder} in File Explorer (it may appear behind this window).")
+        except OSError as error:
+            status.set(f"Could not open File Explorer: {error}")
+
+    def view_item(name):
+        files = mydata.list_files(name)
+        if not files:
+            status.set("Nothing to show.")
+            return
+        win = tk.Toplevel(root)
+        win.title("Clickwarden — " + mydata.ITEMS[name][0] + " (read-only)")
+        win.geometry("900x520")
+        paned = ttk.Frame(win, padding=8)
+        paned.pack(fill="both", expand=True)
+        paned.columnconfigure(1, weight=1)
+        paned.rowconfigure(0, weight=1)
+        listing = tk.Listbox(paned, width=34, exportselection=False)
+        listing.grid(row=0, column=0, sticky="ns")
+        body = tk.Text(paned, wrap="none", background="#f6f6f6")
+        body.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        for entry in files:
+            when = time.strftime("%m-%d %H:%M", time.localtime(entry["modified"]))
+            listing.insert("end", f"{entry['name'][:22]}  {when}")
+        note_text = ("Read-only copy of what is stored on this computer. Nothing here is uploaded. "
+                     "Your API key is never shown.")
+        ttk.Label(paned, text=note_text, foreground="#555").grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        def show(_event=None):
+            picked = listing.curselection()
+            if not picked:
+                return
+            entry = files[picked[0]]
+            try:
+                text = mydata.read_text(name, entry["name"])
+            except (OSError, PermissionError) as error:
+                text = f"Cannot show this file: {error}"
+            body.config(state="normal")
+            body.delete("1.0", "end")
+            body.insert("1.0", text)
+            body.config(state="disabled")
+        listing.bind("<<ListboxSelect>>", show)
+        listing.selection_set(0)
+        show()
 
     ttk.Button(footer, text="Open settings folder", command=open_folder).pack(side="left", padx=4)
     ttk.Button(footer, text="Refresh", command=refresh_data).pack(side="left", padx=4)
     ttk.Button(footer, text="Delete everything…", command=delete_everything).pack(side="left", padx=4)
+    ttk.Label(data_tab, textvariable=status, wraplength=620, foreground="#a00").grid(row=33, column=0, columnspan=3, sticky="w")
+    ttk.Label(data_tab, textvariable=status_message, wraplength=620, foreground="#0a5a2a").grid(row=34, column=0, columnspan=3, sticky="w")
     ttk.Label(data_tab, text="Your API key is never shown. A key supplied through the CLICKWARDEN_API_KEY "
                              "environment variable is not stored by Clickwarden and is not listed here.",
               wraplength=620, foreground="#555").grid(row=32, column=0, columnspan=3, sticky="w")
