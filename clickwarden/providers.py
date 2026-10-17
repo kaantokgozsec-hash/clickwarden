@@ -78,6 +78,15 @@ def is_local(url: str) -> bool:
     return host_of(url) in LOOPBACK_HOSTS
 
 
+def clean_timeout(value, default: float = 20.0) -> float:
+    """Seconds, clamped to 3-120 so a typo can neither fail every call nor hang one for minutes."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return default
+    return min(120.0, max(3.0, seconds)) if seconds == seconds else default
+
+
 def clean_headers(value) -> dict:
     """Keep only well-formed ``{name: value}`` string pairs; refuse CR/LF injection."""
     if not isinstance(value, dict):
@@ -99,6 +108,7 @@ class Settings:
     coord_space: str = "pixels"
     send_thinking_disabled: bool = False
     include_usage: bool = True
+    timeout: float = 20.0  # seconds to wait for a connection and for each stretch of silence
     api_key: str = ""
     problem: str = ""
 
@@ -188,6 +198,7 @@ def resolve() -> Settings:
         coord_space=coord if coord in COORD_SPACES else "pixels",
         send_thinking_disabled=env_flag("SEND_THINKING_DISABLED", bool(config.get("send_thinking_disabled", False))),
         include_usage=bool(config.get("include_usage", True)),
+        timeout=clean_timeout(env("TIMEOUT") or config.get("timeout_s")),
         api_key=env("API_KEY") or load_key(),
     )
     if not settings.base_url or not settings.model:
@@ -200,6 +211,15 @@ def resolve() -> Settings:
                             "Ask them to run `clickwarden configure` and review the data-sharing notice. "
                             "An AI agent must not accept it on their behalf.")
     return settings
+
+
+def provider_notices(settings: "Settings") -> list[str]:
+    """Extra warnings for endpoints that are known or likely to log what they receive."""
+    model, notes = settings.model.lower(), []
+    if ":free" in model or settings.host == "integrate.api.nvidia.com":
+        notes.append("This looks like a FREE or TRIAL endpoint. Free and trial endpoints often log what you send "
+                     "and use it to improve their products. Keep private content off screen while using it.")
+    return notes
 
 
 SENDS = ("JPEG screenshots of the window or screen region being worked on (everything visible in those "
@@ -216,7 +236,7 @@ def disclosure(settings: Settings) -> dict:
         where = (f"{host}, an online service. It receives the data below and may store or log it under "
                  "its own privacy policy and terms; read them before accepting")
     return {"destination": host, "local_only": settings.local, "summary": where,
-            "sends": list(SENDS),
+            "sends": list(SENDS), "notices": provider_notices(settings),
             "clickwarden_uploads_files": False,
             "model_text_is_untrusted": True,
             "controls": ["Cancel/Stop on the on-screen panel", "Ctrl+Alt+F12 abort",
@@ -234,6 +254,7 @@ def disclosure_text(settings: Settings) -> str:
     lines = ["BEFORE YOU ACCEPT: WHAT CAN GO WRONG"] + [f"  - {item}" for item in RISKS]
     lines += ["", "WHAT LEAVES YOUR COMPUTER", f"Destination: {info['summary']}.", "Data sent:"]
     lines += [f"  - {item}" for item in info["sends"]]
+    lines += [f"  ! {note}" for note in info["notices"]]
     lines += ["", "Use it only on computers and accounts you are allowed to operate, and not on screens showing",
               "passwords, payment details or other people's private data unless you accept that risk.",
               "You can read every line of this program; it is open source."]
@@ -273,15 +294,16 @@ def agent_notice() -> str:
             "Stop at once if a result says paused, cancelled or aborted.")
 
 
-def test_connection(settings: Settings, timeout: float = 20.0) -> dict:
+def test_connection(settings: Settings, timeout: float | None = None) -> dict:
     """One tiny paid request (64x64 blank image). Call only after the user confirms."""
     import io
     from PIL import Image
     from .vision import VisionClient
     buffer = io.BytesIO()
     Image.new("RGB", (64, 64), "white").save(buffer, format="JPEG")
-    client = VisionClient(settings=settings, timeout=timeout)
-    result = client.stream_chat("Reply with the single word OK.", "Say OK.", buffer.getvalue(), max_tokens=16)
+    # A first call can queue for a while on a busy or free endpoint, so be more patient than for actions.
+    client = VisionClient(settings=settings, timeout=timeout or max(30.0, settings.timeout))
+    result = client.stream_chat("Reply with the single word OK.", "Say OK.", buffer.getvalue(), max_tokens=96)
     client.close()
     return {"ok": result.ok, "error": result.error, "latency_ms": round(result.total_ms),
             "reply": result.content.strip()[:80]}

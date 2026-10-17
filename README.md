@@ -124,6 +124,10 @@ model, and no screenshot leaves your computer. Practical notes:
   model costs time and retries, not stray clicks. Try `clickwarden locate "the Start button"` first.
 - Some models answer on a 0-1000 grid instead of pixels (some Qwen-VL versions do). Set
   *Coordinate format* to `norm1000` in the settings window if clicks land in the wrong place.
+- Slow or busy endpoints (free tiers especially) can take a while to answer. The settings window has a
+  **Timeout** (default 20 s, allowed 3-120 s); the connection test waits at least 30 s.
+- Free and trial endpoints often log what you send and use it to improve their products. Clickwarden warns
+  when a model name ends in `:free` or the host is NVIDIA's trial API; keep private content off screen.
 - Local servers can be slow on large screenshots; the window-crop and Turbo modes help.
 - Reasoning models may spend their token budget before answering; keep thinking off
   (`CLICKWARDEN_THINKING=0`, default) or raise `CLICKWARDEN_LOCATE_MAX_TOKENS`.

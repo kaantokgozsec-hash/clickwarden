@@ -177,6 +177,79 @@ class CoordinateSpaceTests(unittest.TestCase):
         self.assertEqual(vision.to_pixels(data, 640, 480, "norm1000")["box"], [0, 0, 640, 480])
 
 
+class TimeoutAndFreeEndpointTests(IsolatedConfig):
+    def test_a_slow_first_response_is_not_cut_off_at_eight_seconds(self):
+        client = VisionClient(settings=ready(timeout=25))
+        self.assertEqual(client.timeout, 25.0)
+        response = Mock(status_code=200)
+        response.iter_lines.return_value = iter([])
+        with patch.object(client._session, "post", return_value=response) as post:
+            client.stream_chat("sys", "q", b"jpeg")
+        self.assertEqual(post.call_args.kwargs["timeout"], (10.0, 25.0))
+        client.close()
+
+    def test_silence_longer_than_the_timeout_ends_the_call_with_that_number(self):
+        import itertools
+        import time
+        from types import SimpleNamespace
+        client = VisionClient(settings=ready(timeout=3))
+        response = Mock(status_code=200)
+        response.iter_lines.return_value = iter([b": keep-alive"])
+        ticks = itertools.count(0, 100)  # every look at the clock is 100 s after the last
+        fake_time = SimpleNamespace(monotonic=lambda: next(ticks), perf_counter=time.perf_counter,
+                                    sleep=lambda seconds: None)
+        with patch.object(client._session, "post", side_effect=lambda *a, **k: response),                 patch("clickwarden.vision.time", fake_time):
+            response.iter_lines.side_effect = lambda: iter([b": keep-alive"])
+            result = client.stream_chat("sys", "q", b"jpeg")
+        self.assertIn("3 seconds", result.error or "")
+        client.close()
+
+    def test_timeout_comes_from_config_or_env_and_is_clamped(self):
+        providers.save_config({"base_url": URL, "model": "m", "timeout_s": 45})
+        self.assertEqual(providers.resolve().timeout, 45.0)
+        with patch.dict("os.environ", {"CLICKWARDEN_TIMEOUT": "9999"}):
+            self.assertEqual(providers.resolve().timeout, 120.0)
+        with patch.dict("os.environ", {"CLICKWARDEN_TIMEOUT": "0.1"}):
+            self.assertEqual(providers.resolve().timeout, 3.0)
+        with patch.dict("os.environ", {"CLICKWARDEN_TIMEOUT": "soon"}):
+            self.assertEqual(providers.resolve().timeout, 20.0)
+        self.assertEqual(Settings().timeout, 20.0)
+
+    def test_connection_test_is_more_patient_than_normal_actions(self):
+        seen = {}
+
+        class Recorder:
+            def __init__(self, settings, timeout):
+                seen["timeout"] = timeout
+
+            def stream_chat(self, *args, **kwargs):
+                return StreamResult(content="OK")
+
+            def close(self):
+                pass
+        with patch("clickwarden.vision.VisionClient", Recorder):
+            self.assertTrue(providers.test_connection(ready(timeout=8))["ok"])
+        self.assertEqual(seen["timeout"], 30.0)
+
+    def test_free_and_trial_endpoints_get_a_logging_warning_everywhere(self):
+        for settings in (ready(base_url="https://integrate.api.nvidia.com/v1/chat/completions"),
+                         Settings(base_url="https://openrouter.ai/api/v1/chat/completions",
+                                  model="nvidia/nemotron-3.5-super-vl:free", api_key="k")):
+            info = providers.disclosure(settings)
+            self.assertTrue(info["notices"], settings.host)
+            self.assertIn("FREE or TRIAL", configure.consent_question(settings))
+            self.assertIn("FREE or TRIAL", providers.disclosure_text(settings))
+        self.assertEqual(providers.disclosure(ready())["notices"], [])
+
+    def test_timeout_form_validation(self):
+        values = ConfigureLogicTests.values(self, api_key="k")
+        for bad in ("2", "500", "soon"):
+            self.assertTrue(any("Timeout" in e for e in configure.form_to_settings({**values, "timeout": bad})[1]), bad)
+        settings, errors = configure.form_to_settings({**values, "timeout": "40"})
+        self.assertEqual((errors, settings.timeout), ([], 40.0))
+        self.assertEqual(configure.form_to_settings({**values, "timeout": ""})[0].timeout, 20.0)
+
+
 class DisclosureTests(unittest.TestCase):
     def test_remote_disclosure_names_host_data_and_controls(self):
         info = providers.disclosure(ready())

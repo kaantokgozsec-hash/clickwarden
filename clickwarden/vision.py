@@ -199,7 +199,7 @@ class VisionClient:
     """Thread-safe, keep-alive client for the Flash vision model."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None,
-                 api_url: str | None = None, timeout: float = 45.0,
+                 api_url: str | None = None, timeout: float | None = None,
                  settings: Settings | None = None):
         """Settings come from ``clickwarden configure`` unless the caller passes them.
 
@@ -214,7 +214,7 @@ class VisionClient:
         self.settings = settings
         self.model = settings.model
         self.api_url = settings.base_url
-        self.timeout = timeout
+        self.timeout = float(timeout if timeout is not None else settings.timeout)
         self.api_key = settings.api_key
         self._lock = threading.Lock()
         self._session = requests.Session()
@@ -342,7 +342,7 @@ class VisionClient:
             with self._lock:  # serialize session use; keep-alive pool stays hot
                 self.total_requests += 1
                 resp = self._session.post(self.api_url, json=payload, headers=headers,
-                                          stream=True, timeout=(min(self.timeout, 8.0), min(self.timeout, 8.0)))
+                                          stream=True, timeout=(min(self.timeout, 10.0), self.timeout))
             if resp.status_code != 200:
                 result.error = f"HTTP {resp.status_code}: {resp.text[:300]}"
                 result.total_ms = (time.perf_counter() - t0) * 1000
@@ -351,8 +351,8 @@ class VisionClient:
             buf: list[str] = []
             last_content = time.monotonic()
             for raw in resp.iter_lines():
-                if time.monotonic() - last_content > 8.0:
-                    raise requests.ReadTimeout("No model content for 8 seconds")
+                if time.monotonic() - last_content > self.timeout:
+                    raise requests.ReadTimeout(f"No model content for {self.timeout:g} seconds")
                 if not raw or not raw.startswith(b"data: "):
                     continue
                 chunk = raw[6:]

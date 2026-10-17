@@ -194,7 +194,7 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.retries,1)
         self.assertEqual(client.total_requests,2)
-        self.assertEqual(post.call_args.kwargs["timeout"],(8.0,8.0))
+        self.assertEqual(post.call_args.kwargs["timeout"],(10.0,20.0))  # connect cap, then the 20 s default read/stall limit
 
     def test_hud_does_not_end_between_session_actions(self):
         hud = Mock()

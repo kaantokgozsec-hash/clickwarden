@@ -60,13 +60,21 @@ def form_to_settings(values: dict) -> tuple[Settings, list[str]]:
             if not isinstance(parsed, dict) or len(headers) != len(parsed):
                 errors.append("Extra headers must be a JSON object of plain string names and values "
                               "(letters, digits and hyphens in names; no control characters).")
+    timeout_text = str(values.get("timeout") or "").strip()
+    timeout = providers.clean_timeout(timeout_text or 20.0)
+    if timeout_text:
+        try:
+            if not 3 <= float(timeout_text) <= 120:
+                raise ValueError
+        except ValueError:
+            errors.append("Timeout must be a number of seconds between 3 and 120.")
     coord = values.get("coord_space") or "pixels"
     if coord not in COORD_SPACES:
         errors.append("Coordinate format must be pixels or norm1000.")
     settings = Settings(preset=values.get("preset") or "custom", base_url=url, model=model, headers=headers,
                         coord_space=coord if coord in COORD_SPACES else "pixels",
                         send_thinking_disabled=bool(values.get("send_thinking_disabled")),
-                        include_usage=bool(values.get("include_usage", True)),
+                        include_usage=bool(values.get("include_usage", True)), timeout=timeout,
                         api_key=(values.get("api_key") or "").strip())
     for name in ("price_in", "price_out"):
         text = str(values.get(name) or "").strip()
@@ -85,6 +93,7 @@ def consent_question(settings: Settings) -> str:
     lines = [f"Allow Clickwarden to send screenshots of your screen to {settings.host}?", "",
              info["summary"][0].upper() + info["summary"][1:] + ".", "", "What is sent:"]
     lines += [f"  - {item}" for item in info["sends"]]
+    lines += [f"  ! {note}" for note in info["notices"]]
     lines += ["", "What can go wrong:"] + [f"  - {item}" for item in providers.RISKS[:3]]
     lines += ["", "Choose No to keep everything on this computer. You can withdraw this any time with "
                   "Revoke consent. It only applies to this provider."]
@@ -104,7 +113,8 @@ def save_form(values: dict, accepted: bool) -> list[str]:
         return errors
     config.update(preset=settings.preset, base_url=settings.base_url, model=settings.model,
                   headers=settings.headers, coord_space=settings.coord_space,
-                  send_thinking_disabled=settings.send_thinking_disabled, include_usage=settings.include_usage)
+                  send_thinking_disabled=settings.send_thinking_disabled, include_usage=settings.include_usage,
+                  timeout_s=settings.timeout)
     for name in ("price_in", "price_out"):
         text = str(values.get(name) or "").strip()
         if text:
@@ -126,7 +136,7 @@ def describe() -> dict:
     s = providers.resolve()
     return {"configured": not s.problem, "problem": s.problem or None, "destination": s.host or None,
             "local_only": s.local, "model": s.model or None, "coord_space": s.coord_space,
-            "extra_header_names": sorted(s.headers), "api_key": "stored" if s.api_key else "none",
+            "timeout_seconds": s.timeout, "extra_header_names": sorted(s.headers), "api_key": "stored" if s.api_key else "none",
             "data_sharing_accepted_for": providers.consent_status(s),
             "config_dir": str(providers.config_dir())}
 
@@ -152,7 +162,8 @@ def launch():  # pragma: no cover - interactive window
            "send_thinking_disabled": tk.BooleanVar(value=bool(config.get("send_thinking_disabled"))),
            "include_usage": tk.BooleanVar(value=bool(config.get("include_usage", True))),
            "price_in": tk.StringVar(value=str(config.get("price_in", ""))),
-           "price_out": tk.StringVar(value=str(config.get("price_out", "")))}
+           "price_out": tk.StringVar(value=str(config.get("price_out", ""))),
+           "timeout": tk.StringVar(value=str(config.get("timeout_s", 20)))}
     status = tk.StringVar()
     accepted_hosts = set()  # hosts the user said Yes for in this window; recorded when they press Save
 
@@ -204,8 +215,10 @@ def launch():  # pragma: no cover - interactive window
     limited(prices, 24, textvariable=var["price_in"], width=9).pack(side="left")
     ttk.Label(prices, text=" in / ").pack(side="left")
     limited(prices, 24, textvariable=var["price_out"], width=9).pack(side="left")
-    ttk.Label(prices, text=" out  USD per 1M tokens (optional, for cost estimates)").pack(side="left")
-    row(12, "Prices", prices)
+    ttk.Label(prices, text=" out  USD per 1M tokens (optional)    Timeout ").pack(side="left")
+    limited(prices, 6, textvariable=var["timeout"], width=5).pack(side="left")
+    ttk.Label(prices, text=" seconds").pack(side="left")
+    row(12, "Prices / timeout", prices)
 
     notice = tk.Text(frame, height=11, wrap="word", background="#f6f6f6")
     notice.grid(row=13, column=0, columnspan=2, sticky="nsew", pady=(10, 4))
