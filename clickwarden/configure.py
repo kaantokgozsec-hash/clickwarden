@@ -429,6 +429,12 @@ def launch():  # pragma: no cover - interactive window
             line = mydata.status_text(row)
             if row["name"] in ("sessions", "jobs", "shots") and row["exists"]:
                 line += " - may contain private content"
+            if row["name"] == "settings" and row["exists"]:
+                saved = providers.load_config()
+                line += (f"\nSaved now: {saved.get('model') or '(no model)'} at "
+                         f"{providers.host_of(saved.get('base_url', '')) or '(no endpoint)'}, "
+                         f"{saved.get('coord_space', 'pixels')}, timeout {saved.get('timeout_s', 20)}s"
+                         + (f", extra fields {json.dumps(saved['extra_body'])}" if saved.get("extra_body") else ""))
             widgets["summary"].config(text=line)
             widgets["button"].config(state="normal" if row["exists"] else "disabled")
             widgets["path"].config(text=row["path"])
