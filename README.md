@@ -33,7 +33,7 @@ assurance there is.
 
 So please treat it as an experiment: read the code, expect rough edges, do not trust it with anything
 you cannot afford to lose, and tell me what is wrong. Issues, corrections and criticism are welcome.
-Product and service names mentioned here (OpenAI, Google Gemini, OpenRouter, Ollama, LM Studio, Windows)
+Product and service names mentioned here (OpenAI, Google Gemini, NVIDIA, OpenRouter, Ollama, LM Studio, Windows)
 belong to their owners; Clickwarden is not affiliated with or endorsed by any of them.
 
 ## What you can inspect and control
@@ -110,7 +110,7 @@ screen is sent. Tool reference: [docs/TOOLS.md](docs/TOOLS.md). AI agents should
 
 Any server that accepts OpenAI-style `chat/completions` with image input can work. The settings
 window has starting presets (Ollama, LM Studio, OpenRouter, Gemini's OpenAI-compatible endpoint,
-OpenAI, custom). **The maintainer has not tested these presets or any particular model**; model
+OpenAI, NVIDIA's API catalog, custom). **The maintainer has not tested these presets or any particular model**; model
 names change, so choose a vision-capable model yourself.
 
 **Can local vision models run this on their machine? Yes, in principle.** Point it at
