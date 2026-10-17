@@ -1,5 +1,6 @@
 """Focus-checked typing, target-centred scroll, NOT_VISIBLE inspection and usage accounting."""
 import time
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -99,6 +100,11 @@ class FocusCheckedTypingTests(unittest.TestCase):
 
 class InspectAndLocatePromptTests(unittest.TestCase):
     def setUp(self):
+        self._isolated = tempfile.TemporaryDirectory()  # never read the developer's real saved settings
+        self.addCleanup(self._isolated.cleanup)
+        patcher = patch.dict("os.environ", {"CLICKWARDEN_CONFIG_DIR": self._isolated.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.client = VisionClient()
 
     def tearDown(self):

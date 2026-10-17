@@ -1,6 +1,7 @@
 """Deterministic Windows tests: no real input, screenshots or provider requests."""
 import importlib
 import json
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -78,6 +79,11 @@ class InputTests(unittest.TestCase):
 
 class VisionTests(unittest.TestCase):
     def setUp(self):
+        self._isolated = tempfile.TemporaryDirectory()  # never read the developer's real saved settings
+        self.addCleanup(self._isolated.cleanup)
+        patcher = patch.dict("os.environ", {"CLICKWARDEN_CONFIG_DIR": self._isolated.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.client = VisionClient()
 
     def tearDown(self):
