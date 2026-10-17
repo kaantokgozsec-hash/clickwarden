@@ -45,4 +45,4 @@ packages = ["clickwarden"]
 version = { attr = "clickwarden._version.__version__" }
 
 [tool.setuptools.package-data]
-clickwarden = ["uia_probe.ps1", "assets/*.ico"]
+clickwarden = ["uia_probe.ps1", "assets/*.ico", "assets/SKILL.md"]

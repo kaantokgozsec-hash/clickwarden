@@ -24,6 +24,11 @@ Clickwarden splits the roles:
 - Task order comes from the planner (or you). Clickwarden does not plan; it executes one small
   grounded step at a time and refuses when it cannot find a target.
 
+> **Shortcut:** `clickwarden configure` (or the desktop shortcut) opens a window whose **Set up** tab walks through
+> these steps with a live checklist, and whose **Connect an agent** tab holds the snippets below with your real
+> paths filled in, a *Copy* button for each, a check that the server loads, and a button that installs the skill
+> file. It never edits your agent's own settings; you paste the snippet yourself.
+
 ## 1. Install and configure (you, not the agent)
 
 ```powershell

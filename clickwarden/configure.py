@@ -178,7 +178,7 @@ def launch():  # pragma: no cover - interactive window
     import tkinter as tk
     from tkinter import messagebox, ttk
 
-    from . import mydata
+    from . import connect, mydata
 
     config = providers.load_config()
     claim_taskbar_identity()
@@ -196,8 +196,14 @@ def launch():  # pragma: no cover - interactive window
     tabs.pack(fill="both", expand=True)
     frame = ttk.Frame(tabs, padding=14)
     data_tab = ttk.Frame(tabs, padding=14)
+    setup_tab = ttk.Frame(tabs, padding=14)
+    connect_tab = ttk.Frame(tabs, padding=14)
+    tabs.add(setup_tab, text="Set up")
     tabs.add(frame, text="Provider and data sharing")
+    tabs.add(connect_tab, text="Connect an agent")
     tabs.add(data_tab, text="My data")
+    tab_widgets = {"setup": setup_tab, "provider": frame, "connect": connect_tab, "data": data_tab}
+    setup_hooks = []
     frame.columnconfigure(1, weight=1)
 
     labels = {name: preset["label"] for name, preset in PRESETS.items()}
@@ -440,6 +446,8 @@ def launch():  # pragma: no cover - interactive window
             widgets["summary"].config(text=line)
             widgets["button"].config(state="normal" if row["exists"] else "disabled")
             widgets["path"].config(text=row["path"])
+        for hook in setup_hooks:
+            hook()
 
     for index, (item, (item_label, item_note, _sensitive)) in enumerate(mydata.ITEMS.items()):
         base = 1 + index * 3
@@ -525,6 +533,186 @@ def launch():  # pragma: no cover - interactive window
                              "environment variable is not stored by Clickwarden and is not listed here.",
               wraplength=620, foreground="#555").grid(row=32, column=0, columnspan=3, sticky="w")
     refresh_data()
+
+    # ---- Set up tab: a plain checklist ----
+    ttk.Label(setup_tab, text="Set up Clickwarden", font=("Segoe UI", 13, "bold")).grid(row=0, column=0, columnspan=3, sticky="w")
+    ttk.Label(setup_tab, wraplength=640, justify="left", foreground="#8a1c1c",
+              text="Steps 1-3 are yours alone: choosing where your screen goes, typing your key and accepting "
+                   "data sharing. No AI agent may do them for you, and Clickwarden's tools cannot.").grid(
+        row=1, column=0, columnspan=3, sticky="w", pady=(2, 10))
+    step_widgets = {}
+    for position, step_id in enumerate(("provider", "key", "consent", "test", "agent")):
+        base = 2 + position * 2
+        mark = ttk.Label(setup_tab, text="○", font=("Segoe UI", 14), width=2)
+        mark.grid(row=base, column=0, sticky="nw")
+        title = ttk.Label(setup_tab, text="", font=("Segoe UI", 10, "bold"))
+        title.grid(row=base, column=1, sticky="w")
+        go = ttk.Button(setup_tab, text="Open")
+        go.grid(row=base, column=2, sticky="e")
+        detail = ttk.Label(setup_tab, text="", wraplength=520, foreground="#555", justify="left")
+        detail.grid(row=base + 1, column=1, sticky="w", pady=(0, 8))
+        step_widgets[step_id] = (mark, title, go, detail)
+    setup_tab.columnconfigure(1, weight=1)
+    test_result = tk.StringVar()
+    test_button = step_widgets["test"][2]  # the test step's own button runs the test
+    ttk.Label(setup_tab, textvariable=test_result, wraplength=600, justify="left").grid(
+        row=14, column=1, columnspan=2, sticky="w", pady=4)
+    ttk.Label(setup_tab, wraplength=640, justify="left", foreground="#555",
+              text="The safe test opens a small window with a heading and a button, sends only that window's "
+                   "picture to your provider, and checks the answer against where the button really is. "
+                   "It uses one or two requests and clicks nothing.").grid(row=15, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
+    def refresh_setup():
+        for step in connect.checklist(config):
+            mark, title, go, detail = step_widgets[step["id"]]
+            done = step["done"]
+            mark.config(text="✔" if done else "•" if done is None else "○",
+                        foreground="#0a7a2a" if done else "#8a5a00" if done is None else "#a00")
+            title.config(text=step["title"])
+            detail.config(text=step["detail"])
+            if step["id"] == "test":
+                go.config(text="Run test…", command=run_safe_test)
+            else:
+                go.config(text="Open", command=lambda t=step["tab"]: tabs.select(tab_widgets[t]))
+
+    def run_safe_test():
+        steps = {s["id"]: s["done"] for s in connect.checklist(config)}
+        if not (steps["provider"] and steps["key"] and steps["consent"]):
+            test_result.set("Finish steps 1-3 first (Provider and data sharing tab).")
+            return
+        settings = providers.resolve()
+        where = "your own computer (local server)" if settings.local else settings.host
+        if not messagebox.askokcancel("Run the safe test",
+                                      f"This opens a small test window and sends ONLY that window's picture to {where}. "
+                                      "It may use a little paid or free quota and clicks nothing. Continue?"):
+            return
+        test_button.config(state="disabled")
+        test_result.set("Testing… a small window will appear for a few seconds.")
+        results = queue.Queue()
+
+        def work():
+            import subprocess as sp
+            python = connect.mcp_launch()["command"]
+            try:
+                done = sp.run([python, "-m", "clickwarden.selfcheck"], capture_output=True, text=True, timeout=180,
+                              cwd=str(connect.REPO_ROOT), creationflags=getattr(sp, "CREATE_NO_WINDOW", 0))
+                start = done.stdout.find("{\n")
+                results.put(json.loads(done.stdout[start:]) if start >= 0 else {"ok": False, "problem": (done.stderr or "no output")[-200:]})
+            except Exception as error:
+                results.put({"ok": False, "problem": f"{type(error).__name__}: {error}"})
+
+        def poll():
+            try:
+                report = results.get_nowait()
+            except queue.Empty:
+                root.after(300, poll)
+                return
+            test_button.config(state="normal")
+            entry = connect.record_check(report)
+            reload_config()
+            if report.get("ok"):
+                test_result.set(f"Passed: read the text and found the button ({entry['latency_ms']} ms for the click).")
+            else:
+                why = report.get("problem") or (report.get("locate") or {}).get("error") or (report.get("read") or {}).get("error") \
+                    or "the answer did not match the real button position"
+                test_result.set(f"Did not pass: {str(why)[:260]}")
+            refresh_data()
+        threading.Thread(target=work, daemon=True).start()
+        root.after(300, poll)
+
+    setup_hooks.append(refresh_setup)
+
+    # ---- Connect an agent tab: text to copy, never edits another program's files ----
+    launch_info = connect.mcp_launch()
+    texts = connect.snippets(launch_info)
+    ttk.Label(connect_tab, text="Connect an AI agent", font=("Segoe UI", 13, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+    ttk.Label(connect_tab, text=connect.AGENT_WARNING, wraplength=640, justify="left", foreground="#8a1c1c").grid(
+        row=1, column=0, columnspan=2, sticky="w", pady=(2, 8))
+    ttk.Label(connect_tab, wraplength=640, justify="left", foreground="#555",
+              text="Clickwarden does not change your agent's settings. Copy the snippet for the agent you use and "
+                   "paste it where shown, then restart the agent. Afterwards ask it to call fast_capabilities once "
+                   "to confirm it is connected.").grid(row=2, column=0, columnspan=2, sticky="w")
+    copy_status = tk.StringVar()
+
+    def copy_text(value, where):
+        root.clipboard_clear()
+        root.clipboard_append(value)
+        root.update()
+        copy_status.set(f"Copied. {where}")
+
+    sections = (("Claude Code", "Run this in a terminal:", texts["claude_code"], 2,
+                 "Paste it into a terminal and press Enter."),
+                ("Codex", "Add this to ~/.codex/config.toml:", texts["codex"], 4,
+                 "Paste it at the end of ~/.codex/config.toml."),
+                ("Claude Desktop and other clients", "Add this to the client's MCP servers JSON:", texts["desktop"], 7,
+                 "Paste it into the client's MCP config and restart it."))
+    row = 3
+    for name, hint, value, lines, where in sections:
+        ttk.Label(connect_tab, text=name, font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky="w", pady=(10, 0))
+        ttk.Button(connect_tab, text="Copy", command=lambda v=value, w=where: copy_text(v, w)).grid(
+            row=row, column=1, sticky="e", pady=(10, 0))
+        ttk.Label(connect_tab, text=hint, foreground="#555").grid(row=row + 1, column=0, columnspan=2, sticky="w")
+        box = tk.Text(connect_tab, height=lines, wrap="char", background="#f6f6f6")
+        box.insert("1.0", value)
+        box.config(state="disabled")
+        box.grid(row=row + 2, column=0, columnspan=2, sticky="ew")
+        row += 3
+    connect_tab.columnconfigure(0, weight=1)
+    launch_note = "Uses " + launch_info["command"]
+    if launch_info["needs_install"]:
+        launch_note += " (install first: pip install -e . in this Python)"
+    ttk.Label(connect_tab, text=launch_note, foreground="#888", wraplength=640).grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    check_result = tk.StringVar()
+
+    def check_loads():
+        check_result.set("Checking…")
+        results = queue.Queue()
+        threading.Thread(target=lambda: results.put(connect.verify_launch(launch_info)), daemon=True).start()
+
+        def poll():
+            try:
+                outcome = results.get_nowait()
+            except queue.Empty:
+                root.after(200, poll)
+                return
+            check_result.set(("OK: " if outcome["ok"] else "Problem: ") + outcome["detail"])
+        root.after(200, poll)
+    ttk.Button(connect_tab, text="Check that the server loads", command=check_loads).grid(row=row + 1, column=0, sticky="w", pady=4)
+    ttk.Label(connect_tab, textvariable=check_result, wraplength=640).grid(row=row + 2, column=0, columnspan=2, sticky="w")
+
+    skill_text = tk.StringVar()
+
+    def refresh_skill():
+        skill_text.set(f"Claude Code skill: {connect.skill_status()}  ({connect.skill_target()})")
+
+    def install_skill_clicked():
+        if not messagebox.askyesno("Install the skill",
+                                   f"Copy one file, SKILL.md, to:\n{connect.skill_target()}\n\nIt teaches Claude Code the "
+                                   "safety rules for using Clickwarden. Nothing else is changed.", default="no"):
+            return
+        result = connect.install_skill()
+        if result.get("needs_overwrite") and messagebox.askyesno(
+                "Replace the existing skill?", "A different Clickwarden skill file is already there. Replace it?", default="no"):
+            result = connect.install_skill(overwrite=True)
+        copy_status.set(result["detail"] if not result["ok"] else "Skill installed. Restart Claude Code to load it.")
+        refresh_skill()
+    ttk.Label(connect_tab, textvariable=skill_text, wraplength=640, foreground="#555").grid(
+        row=row + 3, column=0, columnspan=2, sticky="w", pady=(10, 0))
+    ttk.Button(connect_tab, text="Install the skill for Claude Code…", command=install_skill_clicked).grid(
+        row=row + 4, column=0, sticky="w", pady=4)
+    ttk.Label(connect_tab, text="First demo to paste into your agent (only after you are connected):",
+              font=("Segoe UI", 10, "bold")).grid(row=row + 5, column=0, columnspan=2, sticky="w", pady=(10, 0))
+    demo_box = tk.Text(connect_tab, height=4, wrap="word", background="#f6f6f6")
+    demo_box.insert("1.0", connect.FIRST_DEMO_PROMPT)
+    demo_box.config(state="disabled")
+    demo_box.grid(row=row + 6, column=0, sticky="ew")
+    ttk.Button(connect_tab, text="Copy", command=lambda: copy_text(connect.FIRST_DEMO_PROMPT, "Paste it into your agent.")).grid(
+        row=row + 6, column=1, sticky="ne", padx=(6, 0))
+    ttk.Label(connect_tab, textvariable=copy_status, foreground="#0a5a2a", wraplength=640).grid(
+        row=row + 7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    refresh_skill()
+    refresh_setup()
+    tabs.select(setup_tab)
 
     provider_box.bind("<<ComboboxSelected>>", choose_preset)
     var["base_url"].trace_add("write", refresh)

@@ -86,7 +86,9 @@ python -m venv .venv
 .\.venv\Scripts\clickwarden configure
 ```
 
-`clickwarden configure` opens a window where you pick a provider, enter the model and key, read
+`clickwarden configure` opens a window. Its **Set up** tab is a checklist (provider, key, data sharing, a safe
+test, agent connection) and its **Connect an agent** tab gives copy-paste snippets for Claude Code, Codex and
+Claude Desktop. On the Provider tab you pick a provider, enter the model and key, read
 exactly what will be sent, and accept or decline. Paste only the key itself into the key box (the window refuses code samples and huge pastes). If pasting is a
 problem, `clickwarden configure --set-key` takes the key in the terminal with hidden input.
 `clickwarden configure --show` prints the
