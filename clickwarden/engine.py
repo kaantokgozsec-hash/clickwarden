@@ -33,7 +33,7 @@ from .frames import Frame, Stabilizer, capture, capture_window, diff_ratio
 from .input import click as input_click, drag as input_drag, hotkey as input_hotkey, \
     scroll as input_scroll, type_text, failsafe, foreground_guard, CornerAbort, \
     ForegroundGuardError
-from .focus import focused_editability
+from .focus import focused_editability, focused_text, verify_typed
 from .vision import client as vision_client, VisionClient
 from .win32core import enumerate_windows, foreground_hwnd, virtual_screen, window_rect
 
@@ -164,6 +164,7 @@ class Engine:
         self.safety.start()
         self.cache = FrameCache()
         self.focus_probe = focused_editability
+        self.text_reader = focused_text
         self._hud = hud
         if hud is None and HUD_ENABLED:
             try:
@@ -603,8 +604,10 @@ class Engine:
                         "message": "Focused control does not accept text; focus a text field first "
                                    "or pass allow_non_editable=true for keyboard-driven apps"}
             foreground_guard.check()
+            before = self.text_reader() if focus.get("editable") is not False else None
             t0 = time.perf_counter()
             info = type_text(text, wpm=wpm)
+            readback = verify_typed(before, text, read=self.text_reader)
             if press_enter:
                 self.gate()
                 foreground_guard.check()
@@ -612,9 +615,16 @@ class Engine:
             self.cache.invalidate()
         finally:
             foreground_guard.disarm()
-        return {"status": "success", "action": "type", "typed": len(text),
-                "press_enter": press_enter, "focus": focus, "elapsed_ms": info["elapsed_ms"],
-                "total_ms": round((time.perf_counter() - t0) * 1000, 1)}
+        result = {"status": "success", "action": "type", "typed": len(text),
+                  "press_enter": press_enter, "focus": focus, "elapsed_ms": info["elapsed_ms"],
+                  "total_ms": round((time.perf_counter() - t0) * 1000, 1), "text_readback": readback}
+        if readback == "matched":
+            result["verification"] = "native_text_readback"
+        elif readback == "mismatch":
+            result["status"] = "typed_mismatch"
+            result["message"] = ("The control's text does not contain what was typed (the app may have dropped or "
+                                 "changed characters). Do not assume it worked; inspect and retry.")
+        return result
 
     @desktop_action
     def hotkey(self, keys: str, expect: int | None = None) -> dict:

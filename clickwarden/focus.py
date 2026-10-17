@@ -1,8 +1,12 @@
 """Bounded in-process UI Automation read of the keyboard-focused element.
 
-Raw COM vtable calls (no comtypes). Reads control type and read-only flags only,
-never names or values, and never invokes, focuses or types. A hung provider
-yields ``editable=None`` after the deadline instead of blocking input forever.
+Raw COM vtable calls (no comtypes). ``focused_editability`` reads control type and read-only flags
+only, never names or values, and never invokes, focuses or types. A hung provider yields
+``editable=None`` after the deadline instead of blocking input forever.
+
+``focused_text`` is the one exception: it reads the focused control's text so typing can be checked,
+but only inside this process. The caller compares it; it is never returned to an agent, logged or
+stored, and password fields are never read.
 """
 import ctypes
 import threading
@@ -79,6 +83,120 @@ def read_focused():
         _release(automation)
         if initialized:
             ctypes.windll.ole32.CoUninitialize()
+
+
+_PATTERN_VALUE, _PATTERN_TEXT = 10002, 10014
+MAX_READ_CHARS = 200_000
+
+
+def _bstr_out(pointer):
+    """Copy and free a BSTR returned through a pointer-to-pointer."""
+    if not pointer.value:
+        return ""
+    try:
+        return ctypes.wstring_at(pointer.value)
+    finally:
+        ctypes.windll.oleaut32.SysFreeString(ctypes.c_void_p(pointer.value))
+
+
+def _get_pattern(element, pattern_id):
+    pattern = ctypes.c_void_p()
+    try:
+        _method(element, 16, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p))(element, pattern_id, ctypes.byref(pattern))
+    except OSError:
+        return None
+    return pattern if pattern else None
+
+
+def read_focused_text():
+    """Text of the focused control, or None when it exposes none (or is a password field)."""
+    ole32 = ctypes.oledll.ole32
+    initialized = ctypes.windll.ole32.CoInitializeEx(None, 0) >= 0
+    automation = element = ctypes.c_void_p()
+    pattern = None
+    try:
+        clsid, iid = _GUID(), _GUID()
+        ole32.CLSIDFromString(_CLSID_CUIAutomation, ctypes.byref(clsid))
+        ole32.IIDFromString(_IID_IUIAutomation, ctypes.byref(iid))
+        automation = ctypes.c_void_p()
+        ole32.CoCreateInstance(ctypes.byref(clsid), None, 1, ctypes.byref(iid), ctypes.byref(automation))
+        element = ctypes.c_void_p()
+        _method(automation, 8, ctypes.POINTER(ctypes.c_void_p))(automation, ctypes.byref(element))
+        if not element or _property(element, PROPERTIES["password"]) is True:
+            return None
+        pattern = _get_pattern(element, _PATTERN_TEXT)
+        if pattern:
+            document = ctypes.c_void_p()
+            _method(pattern, 7, ctypes.POINTER(ctypes.c_void_p))(pattern, ctypes.byref(document))
+            try:
+                if document:
+                    out = ctypes.c_void_p()
+                    _method(document, 12, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p))(
+                        document, MAX_READ_CHARS, ctypes.byref(out))
+                    return _bstr_out(out)
+            finally:
+                _release(document)
+            return None
+        pattern = _get_pattern(element, _PATTERN_VALUE)
+        if pattern:
+            out = ctypes.c_void_p()
+            _method(pattern, 4, ctypes.POINTER(ctypes.c_void_p))(pattern, ctypes.byref(out))
+            return _bstr_out(out)
+        return None
+    finally:
+        _release(pattern)
+        _release(element)
+        _release(automation)
+        if initialized:
+            ctypes.windll.ole32.CoUninitialize()
+
+
+def _normalize(text):
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def focused_text(timeout=.5):
+    """Bounded read of the focused control's text; None when unavailable or the provider hangs."""
+    box = {}
+
+    def probe():
+        try:
+            box["text"] = read_focused_text()
+        except Exception:
+            box["text"] = None
+
+    worker = threading.Thread(target=probe, daemon=True, name="clickwarden-text-probe")
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        return None
+    text = box.get("text")
+    return None if text is None else _normalize(text)
+
+
+def verify_typed(before, typed, read=None, deadline=.6, interval=.05, clock=time.monotonic, sleep=time.sleep):
+    """Did *typed* land? "matched", "mismatch" or "unavailable". Decided locally; no text leaves this function.
+
+    ``before`` is what the control held before typing (None when unreadable). The typed text must appear
+    at least once more than it did before, which also holds when a selection was replaced.
+    """
+    read = read or focused_text
+    wanted = _normalize(typed)
+    if before is None or not wanted:
+        return "unavailable"
+    before = _normalize(before)
+    baseline = before.count(wanted)
+    end = clock() + deadline
+    while True:
+        after = read()
+        if after is None:
+            return "unavailable"
+        after = _normalize(after)
+        if after.count(wanted) > baseline:
+            return "matched"
+        if clock() >= end:
+            return "mismatch"
+        sleep(interval)
 
 
 def classify(props):

@@ -1,6 +1,7 @@
 """Focus-checked typing, target-centred scroll, NOT_VISIBLE inspection and usage accounting."""
 import time
 import tempfile
+import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -64,6 +65,7 @@ class FocusCheckedTypingTests(unittest.TestCase):
     def setUp(self):
         self.engine = engmod.Engine(client=Mock(), hud=Mock())
         self.engine.safety = Mock()
+        self.engine.text_reader = Mock(return_value=None)  # never read the real focused control in unit tests
         inp.foreground_guard.disarm()
         self.guard = patch.object(engmod, "foreground_guard")
         self.guard.start()
@@ -212,3 +214,62 @@ class SessionScrollAndUsageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TypedTextReadbackTests(unittest.TestCase):
+    def reader(self, *texts):
+        values = iter(texts)
+        last = [None]
+
+        def read():
+            last[0] = next(values, last[0])
+            return last[0]
+        return read
+
+    def test_matches_when_the_text_appears_once_more_than_before(self):
+        from clickwarden import focus
+        self.assertEqual(focus.verify_typed("abc", "xyz", read=self.reader("abcxyz")), "matched")
+        self.assertEqual(focus.verify_typed("xyz", "xyz", read=self.reader("xyzxyz")), "matched")
+        self.assertEqual(focus.verify_typed("", "a\nb", read=self.reader("a\r\nb")), "matched")
+
+    def test_mismatch_when_characters_were_dropped_or_changed(self):
+        from clickwarden import focus
+        ticks = iter(range(0, 100))
+        result = focus.verify_typed("", "from clickwarden", read=self.reader("fnnnnnnnnnnnnnnn"),
+                                    clock=lambda: next(ticks) * 0.2, sleep=lambda _s: None)
+        self.assertEqual(result, "mismatch")
+
+    def test_late_arriving_text_still_matches(self):
+        from clickwarden import focus
+        self.assertEqual(focus.verify_typed("", "hi", read=self.reader("", "", "hi"), sleep=lambda _s: None), "matched")
+
+    def test_unreadable_controls_are_unavailable_not_failures(self):
+        from clickwarden import focus
+        self.assertEqual(focus.verify_typed(None, "hi", read=self.reader("hi")), "unavailable")
+        self.assertEqual(focus.verify_typed("a", "hi", read=self.reader(None)), "unavailable")
+        self.assertEqual(focus.verify_typed("a", "", read=self.reader("a")), "unavailable")
+
+    def engine_type(self, before, after_texts):
+        engine = engmod.Engine(client=Mock(), hud=Mock())
+        engine.safety = Mock()
+        engine.focus_probe = Mock(return_value={"editable": True, "role": "edit"})
+        engine.text_reader = self.reader(before, *after_texts)
+        inp.foreground_guard.disarm()
+        with patch.object(engmod, "foreground_guard"), patch.object(engmod, "type_text", return_value={"elapsed_ms": 1}),                 patch("clickwarden.focus.time.sleep"):
+            return engine.type("hello")
+
+    def test_engine_reports_native_verification_on_match(self):
+        result = self.engine_type("", ["hello"])
+        self.assertEqual((result["status"], result["verification"], result["text_readback"]),
+                         ("success", "native_text_readback", "matched"))
+        self.assertEqual(sessions.evidence(result), "native_text_readback")
+
+    def test_engine_never_reports_success_on_mismatch(self):
+        engine_result = self.engine_type("", ["hxllo", "hxllo", "hxllo"] * 40)
+        self.assertEqual(engine_result["status"], "typed_mismatch")
+        self.assertNotIn("verification", engine_result)
+        self.assertEqual(sessions.evidence(engine_result), "unverified")
+
+    def test_result_never_contains_the_control_text(self):
+        result = self.engine_type("SECRET-BEFORE", ["SECRET-BEFOREhello"])
+        self.assertNotIn("SECRET", json.dumps(result))

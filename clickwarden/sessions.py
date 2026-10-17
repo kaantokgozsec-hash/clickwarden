@@ -39,7 +39,7 @@ def evidence(result, observation=False):
         return "observed"
     if result.get("status") in ("verified","success") and result.get("verification") in (
             "native_position_readback","vision_checked","window_title_checked","window_identity_readback",
-            "native_control_disappearance"):
+            "native_control_disappearance","native_text_readback"):
         return result["verification"]
     if result.get("status") == "success":
         return "dispatched_unverified"
@@ -227,7 +227,7 @@ class Session:
 
     def metrics(self):
         values = sorted(self.latencies)
-        outcomes={key:0 for key in ("native_position_readback","native_control_disappearance","vision_checked","window_title_checked","window_identity_readback","observed","dispatched_unverified","unverified")}
+        outcomes={key:0 for key in ("native_text_readback","native_position_readback","native_control_disappearance","vision_checked","window_title_checked","window_identity_readback","observed","dispatched_unverified","unverified")}
         for entry in self.ledger:
             if entry["action"]=="batch_steps":
                 for result in entry["results"]:
