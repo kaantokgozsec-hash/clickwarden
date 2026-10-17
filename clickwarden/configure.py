@@ -8,6 +8,7 @@ MCP tools) and are stored encrypted with Windows DPAPI.
 from __future__ import annotations
 
 import json
+import queue
 import threading
 
 from . import providers
@@ -237,12 +238,21 @@ def launch():  # pragma: no cover - interactive window
                                       f"{settings.host}. It may use a tiny amount of paid quota. Continue?"):
             return
         status.set("Testing…")
+        results = queue.Queue()  # worker threads never touch Tk; the main thread polls this
 
         def work():
-            result = providers.test_connection(settings)
-            root.after(0, lambda: status.set("Connection works: " + result["reply"] if result["ok"]
-                                             else "Test failed: " + str(result["error"])))
+            results.put(providers.test_connection(settings))
+
+        def poll():
+            try:
+                result = results.get_nowait()
+            except queue.Empty:
+                root.after(150, poll)
+                return
+            status.set("Connection works: " + result["reply"] if result["ok"]
+                       else "Test failed: " + str(result["error"]))
         threading.Thread(target=work, daemon=True).start()
+        root.after(150, poll)
 
     def remove_key():
         providers.save_key("")
@@ -275,6 +285,16 @@ def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if "--show" in args:
         print(json.dumps(describe(), indent=2))
+        return 0
+    if "--set-key" in args:
+        # Terminal fallback that never touches the GUI clipboard. Input is hidden; nothing is echoed.
+        import getpass
+        key = getpass.getpass("API key (input is hidden; paste, then press Enter): ").strip()
+        if not key:
+            print("No key entered; nothing changed.")
+            return 1
+        providers.save_key(key)
+        print("Key stored (encrypted for your Windows account). Run `clickwarden configure` to accept data sharing.")
         return 0
     if "--revoke-consent" in args:
         print(json.dumps({"revoked": providers.revoke_consent()}))

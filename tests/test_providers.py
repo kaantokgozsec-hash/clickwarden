@@ -246,6 +246,16 @@ class ConfigureLogicTests(IsolatedConfig):
         self.assertNotIn("sk-unique-123", json.dumps(summary))
         self.assertNotIn("sk-unique-123", (Path(self.folder.name) / "config.json").read_text(encoding="utf-8"))
 
+    def test_set_key_from_terminal_stores_it_without_echo_or_consent(self):
+        with patch("getpass.getpass", return_value="  nvapi-terminal-key-123  ") as ask:
+            self.assertEqual(configure.main(["--set-key"]), 0)
+        self.assertIn("hidden", ask.call_args.args[0])
+        self.assertEqual(providers.load_key(), "nvapi-terminal-key-123")
+        self.assertNotIn("consent", providers.load_config())  # consent still needs the window
+        with patch("getpass.getpass", return_value="   "):
+            self.assertEqual(configure.main(["--set-key"]), 1)
+        self.assertEqual(providers.load_key(), "nvapi-terminal-key-123")
+
     def test_window_builds_and_closes_without_error(self):
         import tkinter
         with patch.object(tkinter.Tk, "mainloop", lambda self: (self.update(), self.destroy())):

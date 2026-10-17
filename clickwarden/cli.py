@@ -14,6 +14,8 @@ clickwarden.cli — one-shot command line for the engine.
     clickwarden warm                          # pre-open the TLS connection
     clickwarden configure                     # choose the vision provider and review data sharing
     clickwarden configure --show              # print non-secret settings
+    clickwarden configure --set-key           # type the API key in the terminal (hidden input)
+    clickwarden configure --revoke-consent    # forget the saved data-sharing acceptance
 """
 
 from __future__ import annotations
@@ -37,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("warm", help="pre-open the vision TLS connection")
     p_conf = sub.add_parser("configure", help="choose the vision provider, key and data-sharing consent")
     p_conf.add_argument("--show", action="store_true", help="print non-secret settings and exit")
+    p_conf.add_argument("--set-key", action="store_true", help="enter the API key in the terminal (hidden input)")
+    p_conf.add_argument("--revoke-consent", action="store_true", help="forget the saved data-sharing acceptance")
     p_doctor = sub.add_parser("doctor", help="inspect environment and optionally probe pointer input")
     p_doctor.add_argument("--input", action="store_true", help="move the cursor, verify, and restore it")
     p_job = sub.add_parser("job", help="start/control durable desktop jobs")
@@ -130,7 +134,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "configure":
         from .configure import main as configure_main
-        return configure_main(["--show"] if args.show else [])
+        return configure_main([flag for flag, on in (("--show", args.show), ("--set-key", args.set_key),
+                                                   ("--revoke-consent", args.revoke_consent)) if on])
 
     if args.cmd == "doctor":
         from .diagnostics import diagnose
