@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clickwarden"
+dynamic = ["version"]
+description = "Low-latency Windows computer-use engine: bring-your-own vision model (cloud or local), Win32 input, live overlay. Controls your real mouse and keyboard."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Kaan Tokgöz" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Desktop Environment",
+]
+dependencies = [
+    "mss>=10",
+    "pillow>=11",
+    "requests>=2.31",
+    "pywin32>=306",
+    "numpy>=1.26",
+    "python-dotenv>=1.0",
+    "mcp>=1.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/kaantokgozsec-hash/clickwarden"
+Issues = "https://github.com/kaantokgozsec-hash/clickwarden/issues"
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6"]
+
+[project.scripts]
+clickwarden = "clickwarden.cli:main"
+clickwarden-mcp = "clickwarden.server:main"
+
+[tool.setuptools]
+packages = ["clickwarden"]
+
+[tool.setuptools.dynamic]
+version = { attr = "clickwarden._version.__version__" }
+
+[tool.setuptools.package-data]
+clickwarden = ["uia_probe.ps1"]

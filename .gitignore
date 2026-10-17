@@ -1,0 +1,18 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+*.log
+benchmarks/results/
+
+# local secrets and settings must never be committed
+key.dpapi
+config.json
+*.dpapi
