@@ -672,3 +672,15 @@ class MyDataTests(IsolatedConfig):
         (providers.config_dir() / "key.dpapi").write_text("sk-secret-value")
         text = json.dumps(mydata.inventory(self.home))
         self.assertNotIn("sk-secret-value", text)
+
+
+class SkillDocsTests(unittest.TestCase):
+    def test_skill_and_connect_guide_only_name_real_tools(self):
+        tools = set(re.findall(r"^## `(\w+)\(", (ROOT / "docs" / "TOOLS.md").read_text(encoding="utf-8"), re.M))
+        self.assertIn("fast_click", tools)
+        for path in ("skills/clickwarden/SKILL.md", "docs/CONNECT.md"):
+            text = (ROOT / path).read_text(encoding="utf-8")
+            named = set(re.findall(r"`((?:fast_|use_my)\w+)`", text))
+            self.assertEqual(sorted(n for n in named if n not in tools and n != "use_my_computer"), [], path)
+        skill = (ROOT / "skills" / "clickwarden" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(skill.startswith("---\nname: clickwarden\n"))
