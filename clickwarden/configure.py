@@ -172,8 +172,11 @@ def claim_taskbar_identity() -> None:
 
 
 def launch():  # pragma: no cover - interactive window
+    import os
     import tkinter as tk
     from tkinter import messagebox, ttk
+
+    from . import mydata
 
     config = providers.load_config()
     claim_taskbar_identity()
@@ -185,10 +188,14 @@ def launch():  # pragma: no cover - interactive window
             root.iconbitmap(default=str(icon))  # dialogs opened by this window use it too
         except tk.TclError:
             pass
-    root.title("Clickwarden — vision provider and data sharing")
-    root.minsize(660, 860)
-    frame = ttk.Frame(root, padding=14)
-    frame.pack(fill="both", expand=True)
+    root.title("Clickwarden — settings and my data")
+    root.minsize(680, 900)
+    tabs = ttk.Notebook(root)
+    tabs.pack(fill="both", expand=True)
+    frame = ttk.Frame(tabs, padding=14)
+    data_tab = ttk.Frame(tabs, padding=14)
+    tabs.add(frame, text="Provider and data sharing")
+    tabs.add(data_tab, text="My data")
     frame.columnconfigure(1, weight=1)
 
     labels = {name: preset["label"] for name, preset in PRESETS.items()}
@@ -270,6 +277,8 @@ def launch():  # pragma: no cover - interactive window
     consent_label = ttk.Label(frame, text="", wraplength=620, justify="left")
     consent_label.grid(row=16, column=0, columnspan=2, sticky="w")
     ttk.Label(frame, textvariable=status, wraplength=600, foreground="#a00").grid(row=17, column=0, columnspan=2, sticky="w")
+    status_message = tk.StringVar()
+    ttk.Label(frame, textvariable=status_message, wraplength=600, foreground="#0a5a2a").grid(row=19, column=0, columnspan=2, sticky="w")
 
     def current_values():
         values = {name: v.get() for name, v in var.items()}
@@ -316,8 +325,11 @@ def launch():  # pragma: no cover - interactive window
             status.set("\n".join(errors))
             return
         status.set("")
-        messagebox.showinfo("Clickwarden", "Saved. Restart any running Clickwarden/MCP process to use the new settings.")
-        root.destroy()
+        reload_config()
+        accepted_hosts.clear()
+        status_message.set("Saved. New sessions use these settings; restart any session that is already running.")
+        refresh()
+        refresh_data()
 
     def test():
         settings, errors = form_to_settings(current_values())
@@ -350,7 +362,9 @@ def launch():  # pragma: no cover - interactive window
 
     def remove_key():
         providers.save_key("")
+        status_message.set("Stored key deleted.")
         refresh()
+        refresh_data()
 
     def revoke():
         had = providers.revoke_consent()
@@ -359,6 +373,7 @@ def launch():  # pragma: no cover - interactive window
         status.set("Consent revoked. Clickwarden will not send screens to a cloud provider until you accept again."
                    if had else "No saved consent to revoke.")
         refresh()
+        refresh_data()
 
     buttons = ttk.Frame(frame)
     buttons.grid(row=18, column=0, columnspan=2, sticky="e", pady=(8, 0))
@@ -367,6 +382,86 @@ def launch():  # pragma: no cover - interactive window
     ttk.Button(buttons, text="Test connection", command=test).pack(side="left", padx=4)
     ttk.Button(buttons, text="Save", command=save).pack(side="left", padx=4)
     ttk.Button(buttons, text="Close", command=root.destroy).pack(side="left", padx=4)
+    # ---- My data tab: what is stored on this computer, and a delete button for each part ----
+    ttk.Label(data_tab, wraplength=620, justify="left",
+              text="Everything Clickwarden keeps on this computer is listed here. Nothing is uploaded by this tab. "
+                   "Deleting is immediate and cannot be undone. Stop any running session first.").grid(
+        row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+    data_rows = {}
+    shortcut_var = tk.BooleanVar(value=False)
+
+    def reload_config():
+        config.clear()
+        config.update(providers.load_config())
+
+    def report(result, done_text):
+        reload_config()
+        accepted_hosts.clear()
+        status.set("\n".join(f"{mydata.ITEMS.get(n, (n,))[0]}: {m}" for n, m in result["errors"].items()))
+        status_message.set(done_text)
+        refresh()
+        refresh_data()
+
+    def delete_item(name):
+        label = mydata.ITEMS[name][0]
+        if not messagebox.askyesno("Delete " + label, f"Permanently delete: {label}?\n\nThis cannot be undone.",
+                                   icon="warning", default="no"):
+            return
+        result = mydata.delete([name])
+        report(result, f"Deleted: {label}." if result["deleted"] else "")
+
+    def delete_everything():
+        shortcut_too = bool(shortcut_var.get())
+        names = list(mydata.WIPE_DEFAULT) + (["shortcut"] if shortcut_too else [])
+        if not messagebox.askyesno(
+                "Delete ALL Clickwarden data?",
+                "This permanently deletes your stored key, settings and consent, and every session record, job "
+                "record, layout and saved screenshot Clickwarden made" + (", plus the desktop shortcut" if shortcut_too else "") +
+                ".\n\nIt does not remove the program itself and cannot be undone.", icon="warning", default="no"):
+            return
+        result = mydata.delete(names)
+        var["api_key"].set("")
+        report(result, "Everything was deleted." if not result["errors"] else "Some items could not be deleted.")
+
+    def refresh_data():
+        for row in mydata.inventory():
+            widgets = data_rows[row["name"]]
+            line = mydata.status_text(row)
+            if row["name"] in ("sessions", "jobs", "shots") and row["exists"]:
+                line += " - may contain private content"
+            widgets["summary"].config(text=line)
+            widgets["button"].config(state="normal" if row["exists"] else "disabled")
+            widgets["path"].config(text=row["path"])
+
+    for index, (item, (item_label, item_note, _sensitive)) in enumerate(mydata.ITEMS.items()):
+        base = 1 + index * 3
+        ttk.Label(data_tab, text=item_label, font=("Segoe UI", 10, "bold")).grid(row=base, column=0, sticky="w")
+        summary = ttk.Label(data_tab, text="", wraplength=400, justify="left")
+        summary.grid(row=base, column=1, sticky="w", padx=8)
+        button = ttk.Button(data_tab, text="Delete…", command=lambda n=item: delete_item(n))
+        button.grid(row=base, column=2, sticky="e")
+        ttk.Label(data_tab, text=item_note, wraplength=560, foreground="#555").grid(row=base + 1, column=0, columnspan=3, sticky="w")
+        path_label = ttk.Label(data_tab, text="", foreground="#888", wraplength=600)
+        path_label.grid(row=base + 2, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        data_rows[item] = {"summary": summary, "button": button, "path": path_label}
+    ttk.Checkbutton(data_tab, text="Also delete the desktop shortcut when deleting everything",
+                    variable=shortcut_var).grid(row=30, column=0, columnspan=3, sticky="w", pady=(6, 0))
+    footer = ttk.Frame(data_tab)
+    footer.grid(row=31, column=0, columnspan=3, sticky="e", pady=10)
+
+    def open_folder():
+        folder = providers.config_dir()
+        if folder.exists():
+            os.startfile(folder)
+
+    ttk.Button(footer, text="Open settings folder", command=open_folder).pack(side="left", padx=4)
+    ttk.Button(footer, text="Refresh", command=refresh_data).pack(side="left", padx=4)
+    ttk.Button(footer, text="Delete everything…", command=delete_everything).pack(side="left", padx=4)
+    ttk.Label(data_tab, text="Your API key is never shown. A key supplied through the CLICKWARDEN_API_KEY "
+                             "environment variable is not stored by Clickwarden and is not listed here.",
+              wraplength=620, foreground="#555").grid(row=32, column=0, columnspan=3, sticky="w")
+    refresh_data()
+
     provider_box.bind("<<ComboboxSelected>>", choose_preset)
     var["base_url"].trace_add("write", refresh)
     refresh()
@@ -389,6 +484,22 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         providers.save_key(key)
         print("Key stored (encrypted for your Windows account). Run `clickwarden configure` to accept data sharing.")
+        return 0
+    if "--where" in args:
+        from . import mydata
+        print(json.dumps([{k: r[k] for k in ("name", "label", "path", "exists", "files", "bytes")}
+                          for r in mydata.inventory()], indent=2))
+        return 0
+    if "--delete-all" in args:
+        from . import mydata
+        if "--yes" not in args:
+            for row in mydata.inventory():
+                print(mydata.summary_line(row))
+            if input("Permanently delete all of the above (not the shortcut unless --include-shortcut)? "
+                     "Type DELETE: ") != "DELETE":
+                print("Nothing deleted.")
+                return 1
+        print(json.dumps(mydata.wipe_everything("--include-shortcut" in args), indent=2))
         return 0
     if "--revoke-consent" in args:
         print(json.dumps({"revoked": providers.revoke_consent()}))

@@ -49,6 +49,12 @@ belong to their owners; Clickwarden is not affiliated with or endorsed by any of
 - **An AI agent cannot do that for you.** Choosing a provider, entering the key and accepting
   data sharing happen only in the settings window, never through the MCP tools.
 - **Your key is stored encrypted** with Windows DPAPI (not in the repo, not in plain text).
+- **You can see and delete everything it stores, any time.** The settings window stays open
+  after Save and has a **My data** tab listing every stored part (key, settings and consent,
+  session and job records, layouts, saved screenshots, desktop shortcut) with its path, size and
+  a Delete button; *Delete everything* wipes it all (default button **No**). From a terminal:
+  `clickwarden configure --where` lists it, `clickwarden configure --delete-all` deletes it
+  (you type DELETE). Only these known locations are touched; links are never followed.
 - **Honest identity:** requests carry `User-Agent: clickwarden/<version>`. Clickwarden does not
   pretend to be another company's client.
 - **You can read all of it.** About 7k lines of Python, no binaries, no telemetry. The only network client is the vision

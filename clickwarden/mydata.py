@@ -1,0 +1,152 @@
+"""Everything Clickwarden stores on this computer, listed honestly, with a way to delete each part.
+
+Nothing here talks to the network. Only the known locations below are ever touched: a user-chosen
+``CLICKWARDEN_JOB_DIR`` is never deleted, and links/junctions are unlinked rather than followed.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import sys
+from pathlib import Path
+
+from . import providers
+
+# name -> (label, what it holds, sensitive)
+ITEMS = {
+    "key": ("API key", "Your provider key, encrypted with Windows for your account only.", True),
+    "settings": ("Settings and consent", "Provider, model, options and the record of which host you accepted.", False),
+    "sessions": ("Session records", "Text records of sessions: what was done and when; may include window titles "
+                                    "and text that was typed.", True),
+    "jobs": ("Job records", "Text records of background jobs (goal, steps, results).", True),
+    "layouts": ("Desktop layouts", "Saved icon/window layouts.", False),
+    "shots": ("Saved screenshots", "Screenshots written to disk; these may show anything that was on screen.", True),
+    "shortcut": ("Desktop shortcut", "The Clickwarden.lnk shortcut. Deleting it never touches your data.", False),
+}
+ACTIVITY_DIRS = ("sessions", "jobs", "layouts", "shots")
+WIPE_DEFAULT = ("key", "settings") + ACTIVITY_DIRS  # "delete everything" (the shortcut is only removed if asked)
+
+
+def data_root(home: Path | None = None) -> Path:
+    return Path(home or Path.home()) / ".clickwarden"
+
+
+def locate(name: str, home: Path | None = None) -> Path:
+    if name == "key":
+        return providers.config_dir() / "key.dpapi"
+    if name == "settings":
+        return providers.config_dir() / "config.json"
+    if name == "shortcut":
+        return Path(home or Path.home()) / "Desktop" / "Clickwarden.lnk"
+    if name in ACTIVITY_DIRS:
+        return data_root(home) / name
+    raise KeyError(name)
+
+
+def _is_link(path: Path) -> bool:
+    """Symlink or Windows junction/reparse point (never followed or recursed into)."""
+    if path.is_symlink():
+        return True
+    try:
+        return bool(path.lstat().st_file_attributes & 0x400)  # FILE_ATTRIBUTE_REPARSE_POINT
+    except (OSError, AttributeError):
+        return False
+
+
+def _measure(path: Path) -> tuple[int, int]:
+    """(files, bytes) without following links."""
+    if _is_link(path) or not path.exists():
+        return 0, 0
+    if path.is_file():
+        return 1, path.stat().st_size
+    files = size = 0
+    for root, dirs, names in os.walk(path, followlinks=False):
+        dirs[:] = [d for d in dirs if not _is_link(Path(root) / d)]
+        for name in names:
+            try:
+                size += (Path(root) / name).stat().st_size
+                files += 1
+            except OSError:
+                pass
+    return files, size
+
+
+def inventory(home: Path | None = None) -> list[dict]:
+    rows = []
+    for name, (label, note, sensitive) in ITEMS.items():
+        path = locate(name, home)
+        exists = path.exists() or _is_link(path)
+        files, size = _measure(path) if exists else (0, 0)
+        rows.append({"name": name, "label": label, "note": note, "sensitive": sensitive, "path": str(path),
+                     "exists": exists, "files": files, "bytes": size})
+    return rows
+
+
+def human_size(size: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size} GB"
+
+
+def status_text(row: dict) -> str:
+    """Short state without the label, e.g. "3 file(s), 12.0 KB"."""
+    if not row["exists"]:
+        return "nothing stored"
+    if row["name"] in ("key", "settings", "shortcut"):
+        return f"stored ({human_size(row['bytes'])})"
+    return f"{row['files']} file(s), {human_size(row['bytes'])}"
+
+
+def summary_line(row: dict) -> str:
+    return f"{row['label']}: {status_text(row)}"
+
+
+def _remove(path: Path) -> str | None:
+    """Delete one known path; returns an error message or None."""
+    try:
+        if _is_link(path) or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            failures = []
+            if sys.version_info >= (3, 12):
+                shutil.rmtree(path, onexc=lambda _f, p, e: failures.append(f"{p}: {e}"))
+            else:
+                shutil.rmtree(path, onerror=lambda _f, p, e: failures.append(f"{p}: {e[1]}"))
+            if failures:
+                return f"{len(failures)} item(s) could not be removed (in use?), e.g. {failures[0]}"
+        return None
+    except OSError as error:
+        return str(error)
+
+
+def delete(names, home: Path | None = None) -> dict:
+    """Delete the named items. Returns {"deleted": [...], "missing": [...], "errors": {name: message}}."""
+    result = {"deleted": [], "missing": [], "errors": {}}
+    for name in names:
+        if name not in ITEMS:
+            result["errors"][str(name)] = "unknown item"
+            continue
+        path = locate(name, home)
+        if not (path.exists() or _is_link(path)):
+            result["missing"].append(name)
+            continue
+        problem = _remove(path)
+        if name == "settings":
+            path.with_name(path.name + ".tmp").unlink(missing_ok=True)
+        if problem:
+            result["errors"][name] = problem
+        else:
+            result["deleted"].append(name)
+    for folder in (providers.config_dir(), data_root(home)):  # tidy up empty folders only
+        try:
+            folder.rmdir()
+        except OSError:
+            pass
+    return result
+
+
+def wipe_everything(include_shortcut: bool = False, home: Path | None = None) -> dict:
+    return delete(WIPE_DEFAULT + (("shortcut",) if include_shortcut else ()), home)

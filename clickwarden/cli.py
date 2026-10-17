@@ -16,6 +16,8 @@ clickwarden.cli — one-shot command line for the engine.
     clickwarden configure --show              # print non-secret settings
     clickwarden configure --set-key           # type the API key in the terminal (hidden input)
     clickwarden configure --revoke-consent    # forget the saved data-sharing acceptance
+    clickwarden configure --where             # list everything stored on this computer
+    clickwarden configure --delete-all        # delete it all (asks you to type DELETE; --yes skips, --include-shortcut)
 """
 
 from __future__ import annotations
@@ -41,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
     p_conf.add_argument("--show", action="store_true", help="print non-secret settings and exit")
     p_conf.add_argument("--set-key", action="store_true", help="enter the API key in the terminal (hidden input)")
     p_conf.add_argument("--revoke-consent", action="store_true", help="forget the saved data-sharing acceptance")
+    p_conf.add_argument("--where", action="store_true", help="list everything Clickwarden stores on this computer")
+    p_conf.add_argument("--delete-all", action="store_true", help="delete all stored Clickwarden data (asks first)")
+    p_conf.add_argument("--yes", action="store_true", help="with --delete-all: do not ask")
+    p_conf.add_argument("--include-shortcut", action="store_true", help="with --delete-all: also delete the desktop shortcut")
     p_doctor = sub.add_parser("doctor", help="inspect environment and optionally probe pointer input")
     p_doctor.add_argument("--input", action="store_true", help="move the cursor, verify, and restore it")
     p_job = sub.add_parser("job", help="start/control durable desktop jobs")
@@ -135,7 +141,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "configure":
         from .configure import main as configure_main
         return configure_main([flag for flag, on in (("--show", args.show), ("--set-key", args.set_key),
-                                                   ("--revoke-consent", args.revoke_consent)) if on])
+                                                   ("--revoke-consent", args.revoke_consent),
+                                                   ("--where", args.where), ("--delete-all", args.delete_all),
+                                                   ("--yes", args.yes),
+                                                   ("--include-shortcut", args.include_shortcut)) if on])
 
     if args.cmd == "doctor":
         from .diagnostics import diagnose

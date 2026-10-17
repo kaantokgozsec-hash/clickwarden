@@ -1,12 +1,14 @@
 """Provider settings, consent gate, honest identity, coordinate spaces and the settings logic."""
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from clickwarden import configure, providers, vision
+from clickwarden import configure, mydata, providers, vision
 from clickwarden.frames import Frame
 from clickwarden.providers import Settings
 from clickwarden.vision import StreamResult, VisionClient
@@ -614,3 +616,59 @@ class PanelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MyDataTests(IsolatedConfig):
+    def setUp(self):
+        super().setUp()
+        self.home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.home, True)
+        root = self.home / ".clickwarden"
+        for name in ("sessions", "jobs", "layouts", "shots"):
+            (root / name).mkdir(parents=True)
+            (root / name / "a.txt").write_text("x" * 10)
+        (self.home / "Desktop").mkdir()
+        (self.home / "Desktop" / "Clickwarden.lnk").write_bytes(b"lnk")
+        providers.save_config({"model": "m"})
+        (providers.config_dir() / "key.dpapi").write_text("blob")
+
+    def test_inventory_lists_every_stored_part_with_sizes(self):
+        rows = {r["name"]: r for r in mydata.inventory(self.home)}
+        self.assertTrue(all(r["exists"] for r in rows.values()), rows)
+        self.assertEqual(rows["shots"]["files"], 1)
+        self.assertIn("screen", mydata.ITEMS["shots"][1])
+
+    def test_wipe_everything_keeps_the_shortcut_unless_asked(self):
+        result = mydata.wipe_everything(False, self.home)
+        self.assertEqual(result["errors"], {})
+        rows = {r["name"]: r for r in mydata.inventory(self.home)}
+        self.assertEqual([n for n, r in rows.items() if r["exists"]], ["shortcut"])
+        self.assertFalse(providers.config_dir().exists())  # empty folders are tidied away
+        self.assertFalse((self.home / ".clickwarden").exists())
+        mydata.wipe_everything(True, self.home)
+        self.assertFalse((self.home / "Desktop" / "Clickwarden.lnk").exists())
+        self.assertTrue((self.home / "Desktop").exists())
+
+    def test_deleting_one_item_leaves_the_rest_and_missing_is_not_an_error(self):
+        result = mydata.delete(["key", "key"], self.home)
+        self.assertEqual((result["deleted"], result["missing"], result["errors"]), (["key"], ["key"], {}))
+        self.assertEqual(providers.load_key(), "")
+        self.assertTrue((providers.config_dir() / "config.json").exists())
+        self.assertEqual(mydata.delete(["../../etc"], self.home)["errors"], {"../../etc": "unknown item"})
+
+    def test_links_are_removed_but_their_targets_are_never_followed(self):
+        target = self.home / "precious"
+        target.mkdir()
+        (target / "keep.txt").write_text("keep")
+        shutil.rmtree(self.home / ".clickwarden" / "shots")
+        link = self.home / ".clickwarden" / "shots"
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+        self.assertEqual(mydata.inventory(self.home)[[r["name"] for r in mydata.inventory(self.home)].index("shots")]["files"], 0)
+        mydata.delete(["shots"], self.home)
+        self.assertTrue((target / "keep.txt").exists())
+        self.assertFalse(link.exists())
+
+    def test_cli_where_never_prints_the_key(self):
+        (providers.config_dir() / "key.dpapi").write_text("sk-secret-value")
+        text = json.dumps(mydata.inventory(self.home))
+        self.assertNotIn("sk-secret-value", text)
