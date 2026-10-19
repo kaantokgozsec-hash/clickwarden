@@ -59,7 +59,7 @@ belong to their owners; Clickwarden is not affiliated with or endorsed by any of
   (you type DELETE). Only these known locations are touched; links are never followed.
 - **Honest identity:** requests carry `User-Agent: clickwarden/<version>`. Clickwarden does not
   pretend to be another company's client.
-- **You can read all of it.** About 7k lines of Python, no binaries, no telemetry. The only network client is the vision
+- **You can read all of it.** About 8.7k lines of Python, no binaries, no telemetry. The only network client is the vision
   provider connection in `clickwarden/vision.py` (`git grep "requests"` to check); the browser you
   drive naturally talks to whatever sites you visit.
 
@@ -115,7 +115,7 @@ Add a server entry to your client's MCP configuration (the format varies by clie
 ```
 
 The server sends the connecting AI a safety notice and every session start repeats where the
-screen is sent. Step-by-step setup for Claude Code, Codex and Claude Desktop, the agent skill and a safe demo: [docs/CONNECT.md](docs/CONNECT.md). Tool reference: [docs/TOOLS.md](docs/TOOLS.md). AI agents should also read
+screen is sent. Step-by-step setup for Claude Code, Codex and Claude Desktop, the agent skill and a safe demo: [docs/CONNECT.md](docs/CONNECT.md). Tool reference: [docs/TOOLS.md](docs/TOOLS.md); design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). AI agents should also read
 [AGENTS.md](AGENTS.md). Restart the MCP process after changing settings.
 
 ## Providers and local models
