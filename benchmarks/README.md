@@ -6,6 +6,9 @@ desktop by itself.
 - `benchmarks/baseline.py` — outcome vocabulary, separate counters
   (`success` / `missing_target` / `declined` / `wrong_dispatch` / `unknown`)
   plus the `false_success` flag, timing summaries and the JSON baseline recorder.
+- `benchmarks/vision_cost.py` — tokens, latency and grounding accuracy of your configured provider on
+  synthetic images (window crop vs full screen, coordinate formats, reasoning on/off). Never touches the
+  desktop; stops at the first rejected-key error.
 - `benchmarks/results/` — generated baseline reports (gitignored).
 
 The WF-01 fixture failure suite lives in `tests/fixtures/` (seeded layout, page
