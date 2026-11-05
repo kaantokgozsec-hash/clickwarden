@@ -754,3 +754,21 @@ class LegacyMigrationTests(unittest.TestCase):
                 patch.object(providers, "migrate_legacy") as migrate:
             providers.load_config()
         migrate.assert_not_called()
+
+
+class EmptyReplyTests(IsolatedConfig):
+    def test_an_empty_reply_is_a_failure_with_a_reason(self):
+        client = VisionClient(settings=ready())
+        empty = StreamResult(content="", completion_tokens=800)
+        with patch.object(client, "stream_chat", return_value=empty):
+            located = client.locate(frame(), "the Verify button")
+            inspected = client.inspect(frame(), "what is shown?")
+        client.close()
+        self.assertFalse(located["success"])
+        self.assertIn("empty answer", located["error"])
+        self.assertFalse(inspected["success"])
+        self.assertIn("empty answer", inspected["error"])
+
+    def test_successful_calls_report_no_error(self):
+        self.assertIsNone(StreamResult(content="OK").failure)
+        self.assertEqual(StreamResult(content="", error="HTTP 500").failure, "HTTP 500")

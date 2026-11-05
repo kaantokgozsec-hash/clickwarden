@@ -56,6 +56,8 @@ LOCATE_SYSTEM = (
 # A found box is ~40 tokens; reasoning (CLICKWARDEN_THINKING=1) needs the old headroom.
 LOCATE_MAX_TOKENS = env_int("LOCATE_MAX_TOKENS", 160 if DISABLE_THINKING else 512)
 NOT_VISIBLE = "NOT_VISIBLE"
+EMPTY_REPLY = ("The model returned an empty answer (reasoning models can spend their whole budget thinking; "
+               "turn reasoning off for this provider or raise the token budget)")
 MAX_TOKENS_CEILING = 4096
 
 COORDS_PIXELS = "Coordinates are IMAGE pixels, origin top-left."
@@ -191,6 +193,13 @@ class StreamResult:
     @property
     def ok(self) -> bool:
         return bool(self.content) and not self.error
+
+    @property
+    def failure(self) -> str | None:
+        """Why the call failed, never None for a failed call (an empty reply has no transport error)."""
+        if self.ok:
+            return None
+        return self.error or EMPTY_REPLY
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +452,7 @@ class VisionClient:
         res = self.stream_chat(system, user, frame.jpeg, on_partial=_on_partial,
                                max_tokens=max_tokens)
         if not res.ok:
-            return {"success": False, "error": res.error,
+            return {"success": False, "error": res.failure,
                     "latency_ms": round(res.total_ms)}
 
         parsed: dict[str, Any] = {}
@@ -500,7 +509,7 @@ class VisionClient:
             # Model assessment: False means the asked-about content was not on screen.
             "visible": not answer.lstrip("*_ ").upper().startswith(NOT_VISIBLE) if res.ok else None,
             "latency_ms": round(res.total_ms),
-            "error": res.error,
+            "error": res.failure,
         }
 
     # -- planning ----------------------------------------------------------
@@ -513,7 +522,7 @@ class VisionClient:
         res = self.stream_chat(system, "Decide the next action. JSON only.", frame.jpeg,
                                max_tokens=max_tokens)
         if not res.ok:
-            return {"success": False, "error": res.error, "latency_ms": round(res.total_ms)}
+            return {"success": False, "error": res.failure, "latency_ms": round(res.total_ms)}
 
         try:
             data = _extract_json(res.content)
