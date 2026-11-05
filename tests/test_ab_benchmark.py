@@ -394,6 +394,23 @@ class ScheduleAndReportTests(unittest.TestCase):
         self.assertIn("clicks received: ['delete']", text)
         self.assertIn("| Through Clickwarden | 5/6 | 1/2 |", text)
         self.assertIn("False success claims", text)
+        self.assertIn("What the vision model would cost on a paid endpoint", text)
+        # 1100/100 vision tokens per clickwarden run at Nemotron's list price: 0.000165 + 0.00005 = $0.000215
+        self.assertIn("| Nemotron 3.5 Super VL, OpenRouter list price | $0.15 / $0.5 | 1.02¢ |", text)
+        self.assertIn("Gemini 3.1 Flash-Lite price *(approx.)*", text)
+
+    def test_scenario_math_and_paid_headline(self):
+        summary = {"runs": 6, "successes": 5, "mean_heavy_cost": 0.01, "mean_vision_in": 1_000_000,
+                   "mean_vision_out": 100_000}
+        rows = {r["label"]: r for r in report.rows_for_scenarios(summary)}
+        self.assertAlmostEqual(rows["Free tier (what this run used)"]["per_run"], 0.01)
+        nemotron = rows["Nemotron 3.5 Super VL, OpenRouter list price"]
+        self.assertAlmostEqual(nemotron["vision_per_run"], 0.15 + 0.05)
+        self.assertAlmostEqual(nemotron["per_success"], (0.01 + 0.20) * 6 / 5)
+        meta = {"config": {"model": "claude-opus-5-5", "runs": 3}, "vision": {"model": "nemotron"},
+                "prices": {"vision_in": 0.15, "vision_out": 0.5, "vision_label": "Nemotron list price"}}
+        both = {m: {"successes": 1, "runs": 1, "tasks": 1, "mean_tokens": 10.0, "mean_cost": 0.01} for m in ("baseline", "clickwarden")}
+        self.assertIn("(vision tokens billed at Nemotron list price).", report.headline(both, meta))
 
 
 if __name__ == "__main__":

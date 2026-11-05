@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from .environment import load_tasks
+from .pricing import VISION_PRICE_SCENARIOS
 
 NUMERIC = ("run", "success", "heavy_in_tokens", "heavy_out_tokens", "vision_in_tokens", "vision_out_tokens",
            "total_cost_usd", "wall_time_s", "steps", "heavy_uncached_in_tokens", "heavy_cache_write_tokens",
@@ -96,7 +97,9 @@ def headline(summary: dict, meta: dict) -> str:
     cfg = meta.get("config", {})
     model = MODEL_LABEL.get(cfg.get("model"), cfg.get("model", "?"))
     vision = meta.get("vision", {}).get("model", "?")
-    free = not meta.get("prices", {}).get("vision_in") and not meta.get("prices", {}).get("vision_out")
+    prices = meta.get("prices", {})
+    free = not prices.get("vision_in") and not prices.get("vision_out")
+    billed = prices.get("vision_label") or f"${prices.get('vision_in')}/${prices.get('vision_out')} per million tokens"
     tasks = c["tasks"]
     runs = cfg.get("runs", "?")
     return (f"{tasks} Windows tasks × {runs} runs, {model} + {vision}: "
@@ -104,7 +107,7 @@ def headline(summary: dict, meta: dict) -> str:
             f"native computer use; {_fmt_tokens(c['mean_tokens'])} vs {_fmt_tokens(b['mean_tokens'])} tokens per run "
             f"({_change(cmp_['token_change_pct'])}, vision-model tokens included); "
             f"{_cents(c['mean_cost'])} vs {_cents(b['mean_cost'])} per run"
-            + (" (vision model on a free tier, billed at $0)." if free else "."))
+            + (" (vision model on a free tier, billed at $0)." if free else f" (vision tokens billed at {billed})."))
 
 
 def per_task(rows: list[dict]) -> list[dict]:
@@ -121,6 +124,17 @@ def per_task(rows: list[dict]) -> list[dict]:
                         "cost_med": statistics.median(cost), "cost_min": min(cost), "cost_max": max(cost),
                         "wall_med": statistics.median(r["wall_time_s"] for r in rs),
                         "steps_med": statistics.median(r["steps"] for r in rs)})
+    return out
+
+
+def rows_for_scenarios(c: dict) -> list[dict]:
+    """Clickwarden's mean cost per run with its measured vision tokens re-priced at each scenario."""
+    out = []
+    for sc in VISION_PRICE_SCENARIOS:
+        vision = (c["mean_vision_in"] * sc["in"] + c["mean_vision_out"] * sc["out"]) / 1e6
+        per_run = c["mean_heavy_cost"] + vision
+        out.append({**sc, "per_run": per_run, "vision_per_run": vision,
+                    "per_success": per_run * c["runs"] / c["successes"] if c["successes"] else None})
     return out
 
 
@@ -225,6 +239,19 @@ def write_report(out_dir: Path, tasks_file: Path | None = None) -> Path:
               + (f" and cost **{_change(cmp_['cost_change_pct'])}** per run" if cmp_["cost_change_pct"] is not None else "")
               + ". Read this together with the success rates above: a run that fails early can look cheap, which "
               "is why cost per *successful* run is listed too."]
+    c, b = summary.get("clickwarden"), summary.get("baseline")
+    if c and b:
+        L += ["", "### What the vision model would cost on a paid endpoint", "",
+              "The same measured vision tokens re-priced at published rates (USD per million prompt / completion "
+              f"tokens, from OpenRouter's models API, {prices.get('vision_checked') or 'see pricing.py'}). Only the "
+              "Nemotron rows are like-for-like; other models tokenize images differently, so their rows assume the "
+              "same token count and are approximate. Native mode uses no vision model, so its cost does not change.", "",
+              "| Vision price | $/M in / out | Clickwarden cost per run | Native cost per run | Clickwarden vs native | Clickwarden cost per successful run |",
+              "|---|---|---|---|---|---|"]
+        for sc in rows_for_scenarios(c):
+            change = (sc["per_run"] / b["mean_cost"] - 1) * 100 if b["mean_cost"] else 0
+            L.append(f"| {sc['label']}{'' if sc['same_model'] else ' *(approx.)*'} | ${sc['in']} / ${sc['out']} | "
+                     f"{_cents(sc['per_run'])} | {_cents(b['mean_cost'])} | {_change(change)} | {_cents(sc['per_success'])} |")
     L += ["", "### Per task (median, with min–max over the runs)", "",
           "| Task | Mode | Passed | Tokens | Cost | Wall time | Actions |", "|---|---|---|---|---|---|---|"]
     for p in per_task(rows):
@@ -265,7 +292,8 @@ def write_report(out_dir: Path, tasks_file: Path | None = None) -> Path:
           "paced typing; it is reported, not optimized.", ""]
     L += ["## Reproduce", "", "```powershell",
           ".\\.venv\\Scripts\\python.exe -m benchmarks.ab.run --dry-run   # environment check, no API calls",
-          f".\\.venv\\Scripts\\python.exe -m benchmarks.ab.run --model {model} --effort {cfg.get('effort')} --runs {cfg.get('runs')}",
+          f".\\.venv\\Scripts\\python.exe -m benchmarks.ab.run --model {model} --effort {cfg.get('effort')} --runs {cfg.get('runs')}"
+          f" --vision-price-in {prices.get('vision_in', 0)} --vision-price-out {prices.get('vision_out', 0)}",
           "```", "", "Raw data: `results.csv` (one row per run), `meta.json` (setup), `runs/*.json` (transcripts; images not stored).", ""]
     path = out_dir / "BENCHMARK.md"
     path.write_text("\n".join(L), encoding="utf-8")

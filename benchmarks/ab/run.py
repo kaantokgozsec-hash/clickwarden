@@ -203,6 +203,7 @@ def parse_args(argv=None):
     p.add_argument("--screenshot", default="1280x720", help="baseline screenshot size")
     p.add_argument("--vision-price-in", type=float, default=0.0, help="USD per 1M vision prompt tokens")
     p.add_argument("--vision-price-out", type=float, default=0.0, help="USD per 1M vision completion tokens")
+    p.add_argument("--vision-price-label", default="", help="where the vision price comes from (shown in the report)")
     p.add_argument("--out", default="", help="output folder (default benchmarks/results/ab-<time>)")
     p.add_argument("--resume", default="", help="continue an earlier output folder")
     p.add_argument("--dry-run", action="store_true", help="set up, check and tear down every task; no API calls")
@@ -312,7 +313,8 @@ async def main_async(args) -> int:
                        "baseline_post_action_delay_s": 0.6,
                        "clickwarden_excluded_tools": sorted(agent.EXCLUDED_TOOLS)},
             "prices": {"heavy": pricing.HEAVY_PRICES[cfg.model], "heavy_checked": pricing.PRICES_CHECKED,
-                       "vision_in": args.vision_price_in, "vision_out": args.vision_price_out},
+                       "vision_in": args.vision_price_in, "vision_out": args.vision_price_out,
+                       "vision_label": args.vision_price_label, "vision_checked": pricing.VISION_PRICES_CHECKED},
             "vision": {"model": vs.model, "host": vs.host, "coord_space": vs.coord_space,
                        "local_only": getattr(vs, "local_only", None), "preflight": vision_check},
             "heavy_preflight": heavy_check, "screen": screen, "hardware": hardware(), "git": git_state(),
