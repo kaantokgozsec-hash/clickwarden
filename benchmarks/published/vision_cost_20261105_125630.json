@@ -1,0 +1,394 @@
+{
+  "started": "2026-11-05 12:53:57",
+  "host": "openrouter.ai",
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "saved_coord_space": "norm1000",
+  "saved_extra_body": {
+    "reasoning": {
+      "enabled": false
+    }
+  },
+  "images": {
+    "crop": [
+      560,
+      340,
+      13042
+    ],
+    "fullscreen": [
+      1920,
+      1080,
+      55853
+    ]
+  },
+  "conditions": {
+    "crop": {
+      "kind": "locate",
+      "summary": {
+        "runs": 8,
+        "rate_limited": 0,
+        "passed": 8,
+        "median_prompt_tokens": 459.0,
+        "median_completion_tokens": 35.0,
+        "median_ms": 1704.5,
+        "max_ms": 1886,
+        "median_error_px": 3.0
+      },
+      "rows": [
+        {
+          "ok": true,
+          "point": [
+            280,
+            235
+          ],
+          "error_px": 3.0,
+          "error": null,
+          "ms": 1749,
+          "prompt": 459,
+          "completion": 35,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            235
+          ],
+          "error_px": 3.0,
+          "error": null,
+          "ms": 1531,
+          "prompt": 459,
+          "completion": 35,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            234
+          ],
+          "error_px": 2.0,
+          "error": null,
+          "ms": 1728,
+          "prompt": 459,
+          "completion": 35,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            233
+          ],
+          "error_px": 1.0,
+          "error": null,
+          "ms": 1608,
+          "prompt": 459,
+          "completion": 35,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            234
+          ],
+          "error_px": 2.0,
+          "error": null,
+          "ms": 1681,
+          "prompt": 459,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            235
+          ],
+          "error_px": 3.0,
+          "error": null,
+          "ms": 1780,
+          "prompt": 459,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            235
+          ],
+          "error_px": 3.0,
+          "error": null,
+          "ms": 1531,
+          "prompt": 459,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            236
+          ],
+          "error_px": 4.0,
+          "error": null,
+          "ms": 1886,
+          "prompt": 459,
+          "completion": 35,
+          "rate_limited": false
+        }
+      ]
+    },
+    "read": {
+      "kind": "read",
+      "summary": {
+        "runs": 4,
+        "rate_limited": 0,
+        "passed": 4,
+        "median_prompt_tokens": 381.0,
+        "median_completion_tokens": 12.0,
+        "median_ms": 1546.0,
+        "max_ms": 2299,
+        "median_error_px": null
+      },
+      "rows": [
+        {
+          "ok": true,
+          "answer": "PROVIDER CHECK 4417\nVerify",
+          "error": null,
+          "ms": 1478,
+          "prompt": 381,
+          "completion": 12,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "answer": "PROVIDER CHECK 4417\nVerify",
+          "error": null,
+          "ms": 2299,
+          "prompt": 381,
+          "completion": 12,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "answer": "PROVIDER CHECK 4417\nVerify",
+          "error": null,
+          "ms": 1533,
+          "prompt": 381,
+          "completion": 12,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "answer": "PROVIDER CHECK 4417\nVerify",
+          "error": null,
+          "ms": 1559,
+          "prompt": 381,
+          "completion": 12,
+          "rate_limited": false
+        }
+      ]
+    },
+    "fullscreen": {
+      "kind": "locate",
+      "summary": {
+        "runs": 6,
+        "rate_limited": 0,
+        "passed": 6,
+        "median_prompt_tokens": 2228.0,
+        "median_completion_tokens": 36.0,
+        "median_ms": 2728.0,
+        "max_ms": 3337,
+        "median_error_px": 8.2
+      },
+      "rows": [
+        {
+          "ok": true,
+          "point": [
+            952,
+            600
+          ],
+          "error_px": 8.2,
+          "error": null,
+          "ms": 2006,
+          "prompt": 2228,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            952,
+            601
+          ],
+          "error_px": 8.1,
+          "error": null,
+          "ms": 2438,
+          "prompt": 2228,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            952,
+            600
+          ],
+          "error_px": 8.2,
+          "error": null,
+          "ms": 2723,
+          "prompt": 2228,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            952,
+            601
+          ],
+          "error_px": 8.1,
+          "error": null,
+          "ms": 2928,
+          "prompt": 2228,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            952,
+            600
+          ],
+          "error_px": 8.2,
+          "error": null,
+          "ms": 3337,
+          "prompt": 2228,
+          "completion": 36,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            952,
+            600
+          ],
+          "error_px": 8.2,
+          "error": null,
+          "ms": 2733,
+          "prompt": 2228,
+          "completion": 36,
+          "rate_limited": false
+        }
+      ]
+    },
+    "pixels": {
+      "kind": "locate",
+      "summary": {
+        "runs": 4,
+        "rate_limited": 0,
+        "passed": 0,
+        "median_prompt_tokens": 429.0,
+        "median_completion_tokens": 35.0,
+        "median_ms": 1756.0,
+        "max_ms": 2357,
+        "median_error_px": null
+      },
+      "rows": [
+        {
+          "ok": false,
+          "point": null,
+          "error_px": null,
+          "error": "target box outside image or empty",
+          "ms": 1655,
+          "prompt": 429,
+          "completion": 35,
+          "rate_limited": false
+        },
+        {
+          "ok": false,
+          "point": null,
+          "error_px": null,
+          "error": "target box outside image or empty",
+          "ms": 2357,
+          "prompt": 429,
+          "completion": 35,
+          "rate_limited": false
+        },
+        {
+          "ok": false,
+          "point": null,
+          "error_px": null,
+          "error": "target box outside image or empty",
+          "ms": 1681,
+          "prompt": 429,
+          "completion": 35,
+          "rate_limited": false
+        },
+        {
+          "ok": false,
+          "point": null,
+          "error_px": null,
+          "error": "target box outside image or empty",
+          "ms": 1831,
+          "prompt": 429,
+          "completion": 35,
+          "rate_limited": false
+        }
+      ]
+    },
+    "reasoning": {
+      "kind": "locate",
+      "summary": {
+        "runs": 3,
+        "rate_limited": 0,
+        "passed": 2,
+        "median_prompt_tokens": 918,
+        "median_completion_tokens": 1022,
+        "median_ms": 6465,
+        "max_ms": 9319,
+        "median_error_px": 3.0
+      },
+      "rows": [
+        {
+          "ok": false,
+          "point": null,
+          "error_px": null,
+          "error": null,
+          "ms": 5541,
+          "prompt": 918,
+          "completion": 800,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            235
+          ],
+          "error_px": 3.0,
+          "error": null,
+          "ms": 9319,
+          "prompt": 918,
+          "completion": 1807,
+          "rate_limited": false
+        },
+        {
+          "ok": true,
+          "point": [
+            280,
+            235
+          ],
+          "error_px": 3.0,
+          "error": null,
+          "ms": 6465,
+          "prompt": 459,
+          "completion": 1022,
+          "rate_limited": false
+        }
+      ]
+    }
+  }
+}

@@ -126,7 +126,7 @@ Add a server entry to your client's MCP configuration (the format varies by clie
 ```
 
 The server sends the connecting AI a safety notice and every session start repeats where the
-screen is sent. Step-by-step setup for Claude Code, Codex and Claude Desktop, the agent skill and a safe demo: [docs/CONNECT.md](docs/CONNECT.md). Tool reference: [docs/TOOLS.md](docs/TOOLS.md); design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). AI agents should also read
+screen is sent. Step-by-step setup for Claude Code, Codex and Claude Desktop, the agent skill and a safe demo: [docs/CONNECT.md](docs/CONNECT.md). Tool reference: [docs/TOOLS.md](docs/TOOLS.md); design and rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); measured results: [docs/RESULTS.md](docs/RESULTS.md). AI agents should also read
 [AGENTS.md](AGENTS.md). Restart the MCP process after changing settings.
 
 ## Providers and local models

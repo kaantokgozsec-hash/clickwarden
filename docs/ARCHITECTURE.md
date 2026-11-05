@@ -499,6 +499,8 @@ to write through a link.
 
 ### 9.1 What was observed (anecdotal, small n)
 
+> Newer, reproducible measurements (synthetic-image vision benchmark, cost per look): [RESULTS.md](RESULTS.md).
+
 These are development observations on one machine with one cheap free vision model (Nemotron 3.5 Super VL, free tier,
 reasoning disabled, coordinates as a 0–1000 grid). They illustrate behaviour; they are **not** benchmark results.
 
