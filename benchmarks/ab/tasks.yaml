@@ -1,0 +1,156 @@
+# Fixed task list for the A/B benchmark. Written before any run; do not edit after results exist.
+# Both modes get the identical prompt. {bench} is the scratch folder (%USERPROFILE%\ClickwardenBench),
+# {web} the local test site (http://127.0.0.1:<port>). Success is decided only by `check`.
+#
+# setup.files   relative path -> content; a path ending in "/" is a folder
+# setup.open    windows the harness opens before the model starts (notepad / explorer / browser)
+# setup.registry  HKCU values set before the run; the originals are restored afterwards
+version: 1
+tasks:
+  - id: t01_notepad_save
+    difficulty: easy
+    category: text editor
+    prompt: >-
+      A Notepad window is open with the empty file note.txt. Type the text "Clickwarden benchmark 4417"
+      (without the quotes, nothing else) into it and save the file.
+    setup:
+      files: {"note.txt": ""}
+      open: [{notepad: "note.txt"}]
+    check: {type: file_text, path: "note.txt", equals: "Clickwarden benchmark 4417"}
+
+  - id: t02_explorer_rename
+    difficulty: easy
+    category: files
+    prompt: >-
+      File Explorer is open at {bench}\rename. Rename the file draft.txt to final_report.txt.
+    setup:
+      files: {"rename/draft.txt": "quarterly draft 0711\n", "rename/notes.txt": "keep me\n"}
+      open: [{explorer: "rename"}]
+    check:
+      type: all
+      checks:
+        - {type: file_text, path: "rename/final_report.txt", equals: "quarterly draft 0711"}
+        - {type: absent, path: "rename/draft.txt"}
+        - {type: file_text, path: "rename/notes.txt", equals: "keep me"}
+
+  - id: t03_explorer_new_folder
+    difficulty: easy
+    category: files
+    prompt: >-
+      File Explorer is open at {bench}\folders. Create a new folder there named Invoices_2026.
+    setup:
+      files: {"folders/": "", "folders/readme.txt": "folders task\n"}
+      open: [{explorer: "folders"}]
+    check: {type: dir_exists, path: "folders/Invoices_2026"}
+
+  - id: t04_explorer_move
+    difficulty: medium
+    category: files
+    prompt: >-
+      File Explorer is open at {bench}\move. Move the file b.txt into the archive folder in the same place.
+      Leave the other files where they are.
+    setup:
+      files: {"move/a.txt": "file a\n", "move/b.txt": "file b\n", "move/c.txt": "file c\n", "move/archive/": ""}
+      open: [{explorer: "move"}]
+    check:
+      type: all
+      checks:
+        - {type: file_text, path: "move/archive/b.txt", equals: "file b"}
+        - {type: absent, path: "move/b.txt"}
+        - {type: file_text, path: "move/a.txt", equals: "file a"}
+        - {type: file_text, path: "move/c.txt", equals: "file c"}
+
+  - id: t05_file_readonly
+    difficulty: medium
+    category: files
+    prompt: >-
+      File Explorer is open at {bench}\props. Make the file report.txt read-only using its Properties
+      dialog, and close the dialog with OK.
+    setup:
+      files: {"props/report.txt": "annual report\n", "props/other.txt": "other\n"}
+      open: [{explorer: "props"}]
+    check:
+      type: all
+      checks:
+        - {type: readonly, path: "props/report.txt", equals: true}
+        - {type: readonly, path: "props/other.txt", equals: false}
+
+  - id: t06_settings_dark_mode
+    difficulty: medium
+    category: settings
+    prompt: >-
+      Open Windows Settings and set "Choose your mode" to Dark (Personalization, then Colors).
+    setup:
+      registry:
+        - {key: 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize', name: AppsUseLightTheme, value: 1}
+        - {key: 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize', name: SystemUsesLightTheme, value: 1}
+    check:
+      type: all
+      checks:
+        - {type: registry, key: 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize', name: AppsUseLightTheme, equals: 0}
+        - {type: registry, key: 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize', name: SystemUsesLightTheme, equals: 0}
+
+  - id: t07_settings_clock_seconds
+    difficulty: hard
+    category: settings
+    prompt: >-
+      Open Windows Settings and turn on the option that shows seconds in the system tray clock
+      (it is under the taskbar settings).
+    setup:
+      registry:
+        - {key: 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', name: ShowSecondsInSystemClock, value: 0}
+    check: {type: registry, key: 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced', name: ShowSecondsInSystemClock, equals: 1}
+
+  - id: t08_browser_navigate
+    difficulty: easy
+    category: browser
+    prompt: >-
+      A browser window shows the Bench Store website. Go to the Pricing page and open the details of the
+      Student plan.
+    setup:
+      open: [{browser: "/"}]
+    check: {type: web_visit, path: "/pricing/student"}
+
+  - id: t09_web_form
+    difficulty: medium
+    category: browser form
+    prompt: >-
+      A browser window shows a registration form. Fill it in with Full name: Test User, Email:
+      test.user@example.com, Country: Azerbaijan, tick "I agree to the terms", then submit it.
+    setup:
+      open: [{browser: "/form"}]
+    check:
+      type: web_submit
+      path: "/form"
+      fields: {name: "Test User", email: "test.user@example.com", country: "Azerbaijan", agree: "yes"}
+
+  - id: t10_small_icon
+    difficulty: hard
+    category: small target
+    prompt: >-
+      A browser window shows an inbox with a row of small icon buttons above the message. Click the
+      Archive icon once. Do not click any other icon.
+    setup:
+      open: [{browser: "/toolbar"}]
+    check: {type: web_click, target: "archive"}
+
+  - id: t11_scroll_find
+    difficulty: medium
+    category: browser scroll
+    prompt: >-
+      A browser window shows a long list of pending orders. Find order #5521 and click its
+      "Confirm order #5521" button once. Do not confirm any other order.
+    setup:
+      open: [{browser: "/orders"}]
+    check: {type: web_click, target: "confirm-5521"}
+
+  - id: t12_notepad_to_browser
+    difficulty: hard
+    category: multi-window
+    prompt: >-
+      Two windows are open: Notepad with the file code.txt, and a browser showing a Redeem form. Read the
+      access code from code.txt in Notepad, enter it in the browser's Access code field, and click Redeem.
+    setup:
+      files: {"code.txt": "Your access code is: K7-Q2-93\nKeep this file private.\n"}
+      open: [{browser: "/redeem"}, {notepad: "code.txt"}]
+    check: {type: web_submit, path: "/redeem", fields: {code: "K7-Q2-93"}}

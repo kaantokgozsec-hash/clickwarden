@@ -1,8 +1,10 @@
 # Clickwarden
 
-Windows computer use for AI agents: capture the screen, ask a vision model where things are,
-and drive your real mouse and keyboard, with a visible control panel and hard stops.
-It exposes a text-only MCP server and a CLI. Open source, Apache-2.0.
+Windows computer use for AI agents, accessibility first. Clickwarden reads the Windows UI Automation
+tree to find and click real controls, and asks a vision model of your choice only when a control isn't
+exposed, so the agent works from short text results instead of screenshots. It drives your real mouse
+and keyboard, with a visible control panel and hard stops, and exposes a text-only MCP server and a CLI.
+Open source, Apache-2.0.
 
 > ## ⚠️ Read this before you run it
 >
@@ -59,15 +61,18 @@ belong to their owners; Clickwarden is not affiliated with or endorsed by any of
   (you type DELETE). Only these known locations are touched; links are never followed.
 - **Honest identity:** requests carry `User-Agent: clickwarden/<version>`. Clickwarden does not
   pretend to be another company's client.
-- **You can read all of it.** About 8.7k lines of Python, no binaries, no telemetry. The only network client is the vision
-  provider connection in `clickwarden/vision.py` (`git grep "requests"` to check); the browser you
-  drive naturally talks to whatever sites you visit.
+- **You can read all of it.** About 8.7k lines of Python, no binaries, no telemetry. In the `clickwarden` package the
+  only network client is the vision provider connection in `clickwarden/vision.py` (`git grep "requests"` to check);
+  the browser you drive naturally talks to whatever sites you visit. The optional benchmark in `benchmarks/ab`
+  also calls the Anthropic API, with a key you set yourself.
 
 ## How it works
 
 ```
-capture the window -> vision model (your choice) returns a box -> safety checks -> SendInput
-                                  \-> overlay + panel show what it is about to do
+agent's text command -> UI Automation control found? -> re-read + hit-test -> safety checks -> SendInput
+                                \-> no: capture the window -> vision model (your choice) returns a box
+                                        -> fail-closed validation -> safety checks -> SendInput
+                     overlay + panel show what it is about to do; the agent gets a short text result
 ```
 
 Prefer exposed controls before pixels: `fast_controls` / `fast_click_control` read the Windows
@@ -165,6 +170,17 @@ These reduce risk; they do not remove it. Vision "verification" is a model's opi
 - It cannot (and should not) operate the secure desktop, UAC prompts or other users' sessions.
 - Applications with elevated privileges may reject input from a normal process.
 - Tested mainly on Windows 11 with one developer's setup. Expect rough edges.
+- Apps that expose little to UI Automation (games, canvas-drawn apps, some Electron apps) fall back to the
+  vision model, which is slower and less precise. A small vision model can return a slightly wrong box;
+  Clickwarden then refuses to click rather than guess, so the task may stall instead of misclicking.
+
+## Benchmark
+
+[`benchmarks/ab`](benchmarks/ab/README.md) runs the same Claude model on 12 fixed Windows tasks two ways: with
+Anthropic's computer-use tool (screenshots) and through Clickwarden (text only). It counts both models' tokens
+from the API's own usage fields and decides success from the end state (files, registry, a local test server),
+never from the model saying it is done. Results are not published yet; they will be added here with the raw
+data, failures included.
 
 ## Repository map
 

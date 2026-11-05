@@ -33,6 +33,7 @@ Issues = "https://github.com/kaantokgozsec-hash/clickwarden/issues"
 
 [project.optional-dependencies]
 yaml = ["PyYAML>=6"]
+bench = ["anthropic>=2.5", "PyYAML>=6"]
 
 [project.scripts]
 clickwarden = "clickwarden.cli:main"

@@ -9,6 +9,9 @@ desktop by itself.
 - `benchmarks/vision_cost.py` — tokens, latency and grounding accuracy of your configured provider on
   synthetic images (window crop vs full screen, coordinate formats, reasoning on/off). Never touches the
   desktop; stops at the first rejected-key error.
+- `benchmarks/ab/` — A/B benchmark: the same Claude model on 12 Windows tasks with native computer use vs
+  through Clickwarden, counting heavy- and vision-model tokens from API usage. Unlike the files above, its
+  runner drives the real desktop; see [ab/README.md](ab/README.md).
 - `benchmarks/results/` — generated baseline reports (gitignored).
 
 The WF-01 fixture failure suite lives in `tests/fixtures/` (seeded layout, page
