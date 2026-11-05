@@ -6,6 +6,12 @@ exposed, so the agent works from short text results instead of screenshots. It d
 and keyboard, with a visible control panel and hard stops, and exposes a text-only MCP server and a CLI.
 Open source, Apache-2.0.
 
+![An AI agent using Clickwarden: typing in a blank Google Doc, opening Drive and Gmail in new tabs by typing their addresses, then returning to the document](docs/demo.gif)
+
+*Phone recording of an agent typing in a blank Google Doc, opening Drive and Gmail in new tabs by typing their
+addresses, and returning to the document. Recorded with an earlier internal build, when the project was still
+called Winflash (the name on the panel). The inbox and file lists are blurred on purpose.*
+
 > ## ⚠️ Read this before you run it
 >
 > **Clickwarden is invasive by design.** While a session runs it moves your real cursor,
